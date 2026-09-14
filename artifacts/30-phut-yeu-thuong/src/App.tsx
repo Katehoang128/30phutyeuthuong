@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Link, Router as WouterRouter, useLocation } from 'wouter';
-import { ArrowUpRight, BadgeCheck, Check, ChefHat, ChevronDown, ChevronUp, CircleHelp, Clock3, Heart, Leaf, MessageCircle, Plus, Printer, RefreshCw, Search, Send, ShoppingBasket, SlidersHorizontal, Sparkles, Trash2, Users, WalletCards } from 'lucide-react';
+import { ArrowUpRight, BadgeCheck, Check, ChefHat, ChevronDown, ChevronUp, CircleHelp, Clock3, Copy, ExternalLink, Heart, Leaf, MessageCircle, Plus, Printer, RefreshCw, Search, Send, Share2, ShoppingBasket, SlidersHorizontal, Sparkles, Trash2, Users, WalletCards } from 'lucide-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -106,6 +106,20 @@ function getCategory(name: string) {
   if (['Sữa','Chuối'].some((term) => name.includes(term))) return 'Sữa & trái cây';
   return 'Rau, củ & gia vị';
 }
+const BACH_HOA_XANH_AFFILIATE_URL = 'https://www.bachhoaxanh.com/?utm_source=30phutyeuthuong&utm_medium=affiliate&utm_campaign=shopping';
+const DRY_ITEMS = ['Gạo','Bún','Bánh','Yến mạch','Đậu xanh','Tôm khô','Nước mắm','Muối','Tiêu','Dầu ăn','Dầu ô liu'];
+function shoppingGroup(name: string): 'fresh' | 'dry' {
+  return DRY_ITEMS.some((item) => name.includes(item)) ? 'dry' : 'fresh';
+}
+function shopeeSearchUrl(name: string) {
+  return `https://shopee.vn/search?keyword=${encodeURIComponent(name)}`;
+}
+function quantityEditorUnit(value: { qty: number; unit?: string }) {
+  return value.unit || 'g';
+}
+function quantityEditorValue(value: { qty: number; unit?: string }) {
+  return Number.isInteger(value.qty) ? value.qty : Number(value.qty.toFixed(1));
+}
 
 function App() {
   return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><ErrorBoundary><Shell /></ErrorBoundary></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>;
@@ -119,16 +133,23 @@ function Shell() {
   const [plan, setPlan] = useState(() => generatePlan(initialPreferences));
   const [bought, setBought] = useState<Set<string>>(new Set());
   const [customItems, setCustomItems] = useState<{ name: string; bought: boolean }[]>([]);
+  const [quantityOverrides, setQuantityOverrides] = useState<Record<string, number>>({});
   const [favoriteDishes, setFavoriteDishes] = useState<Set<string>>(new Set());
   const [expandedDay, setExpandedDay] = useState(0);
   const [activeMeal, setActiveMeal] = useState<'all' | 'breakfast' | 'lunch' | 'dinner'>('all');
   const units = unitsOf(prefs);
-  const shopping = useMemo(() => aggregate(plan, units), [plan, units]);
+  const shopping = useMemo(() => {
+    const base = aggregate(plan, units);
+    Object.entries(quantityOverrides).forEach(([name, qty]) => {
+      if (base[name] && qty >= 0) base[name] = { ...base[name], qty };
+    });
+    return base;
+  }, [plan, units, quantityOverrides]);
   const totalCost = useMemo(() => Object.entries(shopping).reduce((sum, [name, item]) => bought.has(name) ? sum : sum + priceFor(name, item.qty), 0) + PANTRY_COST[prefs.budget], [shopping, bought, prefs.budget]);
-  const regenerate = () => { const nextSeed = seed + 1; setSeed(nextSeed); setPlan(generatePlan(prefs, nextSeed)); setBought(new Set()); };
+  const regenerate = () => { const nextSeed = seed + 1; setSeed(nextSeed); setPlan(generatePlan(prefs, nextSeed)); setBought(new Set()); setQuantityOverrides({}); };
   const updatePrefs = (next: Partial<Preferences>) => setPrefs((current) => ({ ...current, ...next }));
-  const saveSettings = () => { setPlan(generatePlan(prefs, seed + 1)); setSeed(seed + 1); setSettingsOpen(false); setBought(new Set()); };
-  const page = location === '/shopping' ? <ShoppingPage shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} /> : location === '/costs' ? <CostsPage shopping={shopping} prefs={prefs} totalCost={totalCost} plan={plan} /> : location === '/ask-ai' ? <AskAiPage prefs={prefs} plan={plan} /> : <HomePage plan={plan} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} />;
+  const saveSettings = () => { setPlan(generatePlan(prefs, seed + 1)); setSeed(seed + 1); setSettingsOpen(false); setBought(new Set()); setQuantityOverrides({}); };
+  const page = location === '/shopping' ? <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} setQuantityOverrides={setQuantityOverrides} /> : location === '/costs' ? <CostsPage shopping={shopping} prefs={prefs} totalCost={totalCost} plan={plan} /> : location === '/ask-ai' ? <AskAiPage prefs={prefs} plan={plan} /> : <HomePage plan={plan} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} />;
   return <div className="app-shell grain"><header className="content-wrap pt-5 md:pt-8"><div className="flex items-start justify-between gap-4"><Link href="/" className="flex items-center gap-3 no-underline" data-testid="link-home"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_5px_0_hsl(13_72%_43%)]"><ChefHat size={23} strokeWidth={2.4} /></span><span><span className="display-font block text-xl font-bold tracking-tight text-primary">30 Phút</span><span className="block text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">Yêu thương</span></span></Link><div className="top-actions flex items-center gap-2"><span className="hidden rounded-full bg-secondary px-3 py-1.5 text-xs font-bold text-secondary-foreground sm:inline-flex">Tuần của nhà mình</span><button onClick={() => window.print()} className="tactile flex h-10 w-10 items-center justify-center rounded-full border bg-card text-muted-foreground" aria-label="In trang" data-testid="button-print"><Printer size={17} /></button></div></div></header><main className="content-wrap page-enter">{page}</main><BottomNav location={location} /></div>;
 }
 
@@ -172,6 +193,90 @@ function ShoppingPage({ shopping, bought, setBought, customItems, setCustomItems
   return <div className="space-y-5"><section className="flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><p className="text-xs font-bold uppercase tracking-[.17em] text-primary">Đi chợ</p><h1 className="display-font mt-1 text-4xl font-bold tracking-tight">Túi đi chợ tuần này</h1><p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Đã tính theo đúng số người và 3 bữa mỗi ngày. Chạm vào món đã có sẵn để trừ khỏi dự toán.</p></div><button onClick={() => window.print()} className="tactile inline-flex w-fit items-center gap-2 rounded-full border bg-card px-4 py-2.5 text-xs font-bold" data-testid="button-print-shopping"><Printer size={15} /> In danh sách</button></section><div className="paper-card flex flex-wrap items-center justify-between gap-4 bg-[hsl(41_100%_91%)] p-4 md:p-5"><div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-accent"><ShoppingBasket size={19} /></span><div><p className="text-xs font-bold text-muted-foreground">Tiến độ đi chợ</p><p className="text-xl font-bold">{boughtCount}<span className="text-sm font-medium text-muted-foreground"> / {totalCount} món</span></p></div></div><div className="text-right"><p className="text-xs font-bold text-muted-foreground">Ước tính còn cần chi</p><p className="text-xl font-bold text-primary">{money(totalCost)}</p></div></div><div className="grid gap-4 md:grid-cols-2">{Object.entries(groups).map(([category, items]) => <ShoppingGroup key={category} category={category} items={items} bought={bought} toggle={toggle} />)}</div><section className="paper-card p-5"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-muted-foreground">Tự thêm</p><h2 className="display-font mt-1 text-2xl font-bold">Món cần nhớ</h2></div><Plus size={20} className="text-primary" /></div><div className="mt-4 flex gap-2"><input value={newItem} onChange={(event) => setNewItem(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && add()} placeholder="Ví dụ: khăn giấy, nước rửa rau" className="min-w-0 flex-1 rounded-xl border bg-background px-3 py-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-custom-shopping" /><button onClick={add} className="tactile rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground" data-testid="button-add-shopping"><Plus size={16} /></button></div><div className="mt-3 space-y-2">{customItems.length === 0 ? <p className="rounded-xl border border-dashed p-4 text-center text-xs text-muted-foreground">Chưa có món tự thêm. Danh sách này chỉ của riêng nhà mình.</p> : customItems.map((item, index) => <div key={`${item.name}-${index}`} className={`flex items-center justify-between rounded-xl border bg-background px-3 py-3 ${item.bought ? 'opacity-50' : ''}`}><button onClick={() => setCustomItems(customItems.map((entry, i) => i === index ? { ...entry, bought: !entry.bought } : entry))} className="flex min-w-0 items-center gap-3 text-left text-sm font-bold" data-testid={`button-toggle-custom-${index}`}><span className={`flex h-5 w-5 items-center justify-center rounded-full border ${item.bought ? 'border-[hsl(105_40%_45%)] bg-[hsl(105_40%_45%)] text-white' : ''}`}>{item.bought && <Check size={12} />}</span><span className={item.bought ? 'line-through' : ''}>{item.name}</span></button><button onClick={() => setCustomItems(customItems.filter((_, i) => i !== index))} className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-destructive" aria-label="Xóa món tự thêm" data-testid={`button-remove-custom-${index}`}><Trash2 size={15} /></button></div>)}</div></section></div>;
 }
 function ShoppingGroup({ category, items, bought, toggle }: { category: string; items: [string, { qty: number; unit?: string }][]; bought: Set<string>; toggle: (name: string) => void }) { return <section className="paper-card overflow-hidden"><div className="flex items-center justify-between border-b bg-muted/45 px-4 py-3"><h2 className="text-sm font-bold">{category}</h2><span className="rounded-full bg-card px-2.5 py-1 text-[10px] font-bold text-muted-foreground">{items.length} món</span></div><div className="divide-y">{items.map(([name, value]) => { const done = bought.has(name); return <div key={name} className={`flex items-center justify-between gap-3 px-4 py-3.5 transition-opacity ${done ? 'opacity-45' : ''}`}><button onClick={() => toggle(name)} className="flex min-w-0 items-center gap-3 text-left" data-testid={`button-bought-${name}`}><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${done ? 'border-[hsl(105_40%_45%)] bg-[hsl(105_40%_45%)] text-white' : 'border-[hsl(37_43%_74%)] bg-card'}`}>{done && <Check size={14} strokeWidth={3} />}</span><span className={`text-sm font-semibold ${done ? 'line-through' : ''}`}>{name}</span></button><span className="shrink-0 text-xs font-bold text-muted-foreground">{displayQuantity(value)}</span></div>; })}</div></section>; }
+
+function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomItems, totalCost, setQuantityOverrides }: { shopping: Aggregate; bought: Set<string>; setBought: (value: Set<string>) => void; customItems: { name: string; bought: boolean }[]; setCustomItems: (value: { name: string; bought: boolean }[]) => void; totalCost: number; setQuantityOverrides: (value: Record<string, number> | ((current: Record<string, number>) => Record<string, number>)) => void }) {
+  const [newItem, setNewItem] = useState('');
+  const [copied, setCopied] = useState(false);
+  const entries = Object.entries(shopping) as [string, { qty: number; unit?: string }][];
+  const freshItems = entries.filter(([name]) => shoppingGroup(name) === 'fresh');
+  const dryItems = entries.filter(([name]) => shoppingGroup(name) === 'dry');
+  const toggle = (name: string) => {
+    const next = new Set(bought);
+    next.has(name) ? next.delete(name) : next.add(name);
+    setBought(next);
+  };
+  const updateQuantity = (name: string, value: string) => {
+    const qty = Number(value);
+    if (!Number.isFinite(qty) || qty < 0) return;
+    setQuantityOverrides((current) => ({ ...current, [name]: qty }));
+  };
+  const add = () => {
+    if (newItem.trim()) {
+      setCustomItems([...customItems, { name: newItem.trim(), bought: false }]);
+      setNewItem('');
+    }
+  };
+  const copyShoppingList = async () => {
+    const formatItems = (title: string, items: [string, { qty: number; unit?: string }][]) => [
+      `\n${title}`,
+      ...items.map(([name, value]) => `${bought.has(name) ? '✅' : '⬜'} ${name}: ${displayQuantity(value)}${bought.has(name) ? ' (nhà đã có sẵn)' : ''}`),
+    ];
+    const text = [
+      '🛒 DANH SÁCH ĐI CHỢ - 30 PHÚT YÊU THƯƠNG',
+      ...formatItems('THỰC PHẨM TƯƠI SỐNG', freshItems),
+      ...formatItems('ĐỒ KHÔ & GIA VỊ', dryItems),
+      ...(customItems.length ? ['\nMÓN TỰ THÊM', ...customItems.map((item) => `${item.bought ? '✅' : '⬜'} ${item.name}${item.bought ? ' (nhà đã có sẵn)' : ''}`)] : []),
+      `\nƯớc tính còn cần chi: ${money(totalCost)}`,
+      `Mở ứng dụng: ${new URL('/', window.location.href).href}`,
+    ].join('\n');
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        textarea.remove();
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2200);
+    } catch {
+      setCopied(false);
+    }
+  };
+  const boughtCount = [...bought].filter((name) => shopping[name]).length + customItems.filter((item) => item.bought).length;
+  const totalCount = entries.length + customItems.length;
+  return <div className="space-y-5 pb-5">
+    <section className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
+      <div><p className="text-xs font-bold uppercase tracking-[.17em] text-primary">Đi chợ</p><h1 className="display-font mt-1 text-4xl font-bold tracking-tight">Túi đi chợ tuần này</h1><p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Tươi sống mua nhanh, đồ khô mua đúng chỗ. Chạm vào món nhà mình đã có để trừ khỏi dự toán.</p></div>
+      <div className="flex flex-wrap gap-2">
+        <button onClick={copyShoppingList} className="tactile inline-flex items-center gap-2 rounded-full bg-[hsl(105_40%_45%)] px-4 py-2.5 text-xs font-bold text-white shadow-[0_3px_0_hsl(105_40%_35%)]" data-testid="button-share-zalo">{copied ? <Check size={15} /> : <Share2 size={15} />}{copied ? 'Đã copy danh sách' : '📲 Gửi danh sách đi chợ sang Zalo cho Chồng/Người giúp việc'}</button>
+        <button onClick={() => window.print()} className="tactile inline-flex items-center gap-2 rounded-full border bg-card px-4 py-2.5 text-xs font-bold" data-testid="button-print-shopping"><Printer size={15} /> In danh sách</button>
+      </div>
+    </section>
+    <div className="paper-card flex flex-wrap items-center justify-between gap-4 bg-[hsl(41_100%_91%)] p-4 md:p-5">
+      <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-accent"><ShoppingBasket size={19} /></span><div><p className="text-xs font-bold text-muted-foreground">Tiến độ đi chợ</p><p className="text-xl font-bold">{boughtCount}<span className="text-sm font-medium text-muted-foreground"> / {totalCount} món</span></p></div></div>
+      <div className="text-right"><p className="text-xs font-bold text-muted-foreground">Ước tính còn cần chi</p><p className="text-xl font-bold text-primary">{money(totalCost)}</p><p className="mt-1 text-[10px] text-muted-foreground">Đã trừ món nhà mình có sẵn</p></div>
+    </div>
+    <ShoppingGroupV2 title="Thực phẩm tươi sống" subtitle="Thịt, cá, tôm, rau và củ" items={freshItems} bought={bought} toggle={toggle} updateQuantity={updateQuantity} kind="fresh" />
+    <ShoppingGroupV2 title="Đồ khô & gia vị" subtitle="Gạo, bún, tôm khô và các món để dành" items={dryItems} bought={bought} toggle={toggle} updateQuantity={updateQuantity} kind="dry" />
+    <section className="paper-card border-[hsl(105_40%_45%/.3)] bg-secondary/45 p-4 md:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-[hsl(105_33%_30%)]">Mua tươi sống tiện hơn</p><p className="mt-1 text-sm font-semibold">Đặt một lần, giao đủ rau củ và thịt cá cho cả tuần.</p></div><a href={BACH_HOA_XANH_AFFILIATE_URL} target="_blank" rel="nofollow sponsored noopener" className="tactile inline-flex items-center justify-center gap-2 rounded-xl bg-[hsl(105_40%_45%)] px-4 py-3 text-xs font-bold text-white shadow-[0_4px_0_hsl(105_40%_35%)]" data-testid="link-bach-hoa-xanh"><ShoppingBasket size={16} /> 🛒 Đặt giao tận nhà qua Bách Hóa Xanh <ExternalLink size={13} /></a></div>
+    </section>
+    <section className="paper-card p-5"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-muted-foreground">Tự thêm</p><h2 className="display-font mt-1 text-2xl font-bold">Món cần nhớ</h2></div><Plus size={20} className="text-primary" /></div><div className="mt-4 flex gap-2"><input value={newItem} onChange={(event) => setNewItem(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && add()} placeholder="Ví dụ: khăn giấy, nước rửa rau" className="min-w-0 flex-1 rounded-xl border bg-background px-3 py-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-custom-shopping" /><button onClick={add} className="tactile rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground" data-testid="button-add-shopping"><Plus size={16} /></button></div><div className="mt-3 space-y-2">{customItems.length === 0 ? <p className="rounded-xl border border-dashed p-4 text-center text-xs text-muted-foreground">Chưa có món tự thêm. Danh sách này chỉ của riêng nhà mình.</p> : customItems.map((item, index) => <div key={`${item.name}-${index}`} className={`flex items-center justify-between rounded-xl border bg-background px-3 py-3 ${item.bought ? 'opacity-50' : ''}`}><button onClick={() => setCustomItems(customItems.map((entry, i) => i === index ? { ...entry, bought: !entry.bought } : entry))} className="flex min-w-0 items-center gap-3 text-left text-sm font-bold" data-testid={`button-toggle-custom-${index}`}><span className={`flex h-5 w-5 items-center justify-center rounded-full border ${item.bought ? 'border-[hsl(105_40%_45%)] bg-[hsl(105_40%_45%)] text-white' : ''}`}>{item.bought && <Check size={12} />}</span><span className={item.bought ? 'line-through' : ''}>{item.name}</span></button><button onClick={() => setCustomItems(customItems.filter((_, i) => i !== index))} className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-destructive" aria-label="Xóa món tự thêm" data-testid={`button-remove-custom-${index}`}><Trash2 size={15} /></button></div>)}</div></section>
+  </div>;
+}
+
+function ShoppingGroupV2({ title, subtitle, items, bought, toggle, updateQuantity, kind }: { title: string; subtitle: string; items: [string, { qty: number; unit?: string }][]; bought: Set<string>; toggle: (name: string) => void; updateQuantity: (name: string, value: string) => void; kind: 'fresh' | 'dry' }) {
+  return <section className="paper-card overflow-hidden">
+    <div className="flex flex-col gap-3 border-b bg-muted/45 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-base font-bold">{title}</h2><p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p></div>{kind === 'fresh' ? <a href={BACH_HOA_XANH_AFFILIATE_URL} target="_blank" rel="nofollow sponsored noopener" className="tactile inline-flex items-center justify-center gap-2 rounded-xl bg-[hsl(105_40%_45%)] px-3.5 py-2.5 text-xs font-bold text-white shadow-[0_3px_0_hsl(105_40%_35%)]" data-testid="link-bach-hoa-xanh-group"><ShoppingBasket size={15} /> 🛒 Đặt giao tận nhà qua Bách Hóa Xanh <ExternalLink size={12} /></a> : <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-accent/50 px-3 py-1.5 text-[10px] font-bold text-foreground"><Copy size={12} /> Có thể mua online từng món</span>}</div>
+    {items.length === 0 ? <p className="p-5 text-sm text-muted-foreground">Tuần này chưa có món thuộc nhóm này.</p> : <div className="divide-y">{items.map(([name, value]) => { const done = bought.has(name); return <div key={name} className={`flex flex-col gap-3 px-4 py-4 transition-opacity sm:flex-row sm:items-center sm:justify-between ${done ? 'opacity-45' : ''}`}><div className="flex min-w-0 items-start gap-3"><label className="mt-0.5 flex shrink-0 items-center gap-2 text-[10px] font-bold text-muted-foreground"><input type="checkbox" checked={done} onChange={() => toggle(name)} className="h-5 w-5 accent-[hsl(105_40%_45%)]" data-testid={`checkbox-have-${name}`} /><span className="whitespace-nowrap">Nhà đã có sẵn</span></label><div className="min-w-0"><p className={`text-sm font-semibold ${done ? 'line-through' : ''}`}>{name}</p><p className="mt-1 text-xs font-bold text-primary">{money(priceFor(name, value.qty))}</p></div></div><div className="flex items-center justify-between gap-3 sm:justify-end"><label className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground"><span className="sr-only">Số lượng {name}</span><input type="number" min="0" step={value.unit ? '0.1' : '5'} value={quantityEditorValue(value)} onChange={(event) => updateQuantity(name, event.target.value)} className="w-24 rounded-lg border bg-background px-2.5 py-2 text-right text-sm font-bold outline-none ring-primary focus:ring-2" data-testid={`input-quantity-${name}`} /><span>{quantityEditorUnit(value)}</span></label>{kind === 'dry' && <a href={shopeeSearchUrl(name)} target="_blank" rel="nofollow sponsored noopener" className="inline-flex items-center gap-1.5 rounded-lg border border-primary/25 bg-primary/5 px-2.5 py-2 text-[11px] font-bold text-primary hover:bg-primary/10" data-testid={`link-shopee-${name}`}>Xem trên Shopee <ExternalLink size={12} /></a>}</div></div>; })}</div>}
+  </section>;
+}
 
 function CostsPage({ shopping, prefs, totalCost, plan }: { shopping: Aggregate; prefs: Preferences; totalCost: number; plan: DayPlan[] }) { const ingredients = Object.entries(shopping).reduce((sum, [name, value]) => sum + priceFor(name, value.qty), 0); const weeklyBudget = prefs.budget === 'tietkiem' ? 650000 : prefs.budget === 'thoaimai' ? 1200000 : 850000; const remaining = weeklyBudget - totalCost; const bars = plan.map((day) => Math.round(mealCalories(day).cal * unitsOf(prefs))); const max = Math.max(...bars); return <div className="space-y-5"><section className="flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><p className="text-xs font-bold uppercase tracking-[.17em] text-primary">Chi phí</p><h1 className="display-font mt-1 text-4xl font-bold tracking-tight">Tiền đi chợ, nhìn là hiểu.</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Không cần cộng tay. Công thức giá lấy theo lượng nguyên liệu thật trong thực đơn tuần.</p></div><Link href="/shopping" className="tactile inline-flex w-fit items-center gap-2 rounded-full border bg-card px-4 py-2.5 text-xs font-bold" data-testid="link-costs-shopping">Xem danh sách <ArrowUpRight size={14} /></Link></section><section className="grid gap-4 sm:grid-cols-3"><StatCard label="Dự kiến cả tuần" value={money(totalCost)} accent="primary" /><StatCard label="Nguyên liệu chính" value={money(ingredients)} /><StatCard label={remaining >= 0 ? 'Còn trong ngân sách' : 'Vượt ngân sách'} value={money(Math.abs(remaining))} accent={remaining >= 0 ? 'sage' : 'berry'} /></section><section className="paper-card p-5 md:p-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-muted-foreground">Nhịp chi tiêu</p><h2 className="display-font mt-1 text-2xl font-bold">Mức {budgetLabels[prefs.budget].toLowerCase()}</h2></div><WalletCards size={21} className="text-primary" /></div><div className="mt-6 flex h-44 items-end gap-2 border-b border-l px-2 pb-0 pt-4 sm:gap-4">{bars.map((value, index) => <div key={DAY_NAMES[index]} className="flex h-full flex-1 flex-col items-center justify-end gap-2"><div className="w-full max-w-9 rounded-t-lg bg-[hsl(13_80%_56%/.82)] transition-[height] duration-500" style={{ height: `${Math.max(13, value / max * 100)}%` }} /><span className="text-[10px] font-bold text-muted-foreground">{index === 6 ? 'CN' : `T${index + 2}`}</span></div>)}</div><p className="mt-4 text-xs leading-5 text-muted-foreground">Mỗi ngày gồm sáng, trưa, tối và phần gia vị phân bổ theo tuần. Mức này là ước tính tham khảo — giá chợ có thể thay đổi theo mùa.</p></section><section className="paper-card p-5 md:p-6"><h2 className="display-font text-2xl font-bold">Nếu muốn tiết kiệm thêm</h2><div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="rounded-2xl bg-secondary p-4"><p className="text-sm font-bold">Đổi 1 bữa cá hồi</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Cá basa hấp gừng vẫn giữ đạm và omega-3, nhẹ ví hơn khoảng 28.000 đ / khẩu phần.</p></div><div className="rounded-2xl bg-[hsl(41_100%_91%)] p-4"><p className="text-sm font-bold">Mua theo mùa</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Rau luộc trong tuần có thể thay bằng loại đang tươi nhất ở chợ, công thức vẫn đủ chất.</p></div></div></section></div>; }
 function StatCard({ label, value, accent = '' }: { label: string; value: string; accent?: string }) { return <section className={`paper-card p-5 ${accent === 'primary' ? 'bg-primary text-primary-foreground' : accent === 'sage' ? 'bg-secondary' : accent === 'berry' ? 'bg-[hsl(12_100%_93%)]' : ''}`}><p className={`text-xs font-bold ${accent === 'primary' ? 'text-primary-foreground/75' : 'text-muted-foreground'}`}>{label}</p><p className="display-font mt-2 text-2xl font-bold">{value}</p></section>; }
