@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "30 Phút Yêu Thương"
+description = "Web app mobile-first dành cho phụ nữ bận rộn, giúp tạo thực đơn 7 ngày theo số người, thời gian nấu và ngân sách; kèm danh sách đi chợ, theo dõi chi phí và trợ lý AI."
+version = "1.0.0"
+id = "artifacts/30-phut-yeu-thuong"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21286
+
+[services.development]
+run = "pnpm --filter @workspace/30-phut-yeu-thuong run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/30-phut-yeu-thuong", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/30-phut-yeu-thuong/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21286"
+BASE_PATH = "/"
