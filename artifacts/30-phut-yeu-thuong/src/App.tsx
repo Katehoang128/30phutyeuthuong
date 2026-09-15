@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Link, Router as WouterRouter, useLocation } from 'wouter';
-import { ArrowUpRight, BadgeCheck, Check, ChefHat, ChevronDown, ChevronUp, CircleHelp, Clock3, Copy, ExternalLink, Heart, Leaf, MessageCircle, Plus, Printer, RefreshCw, Search, Send, Share2, ShoppingBasket, SlidersHorizontal, Sparkles, Trash2, Users, WalletCards } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, BadgeCheck, BookOpen, Camera, Check, ChefHat, ChevronDown, ChevronUp, CircleHelp, Clock3, Copy, ExternalLink, Heart, ImagePlus, Leaf, LoaderCircle, MessageCircle, Plus, Printer, RefreshCw, Search, Send, Share2, ShoppingBasket, SlidersHorizontal, Sparkles, Trash2, Upload, Users, Utensils, WalletCards, X } from 'lucide-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -149,7 +149,7 @@ function Shell() {
   const regenerate = () => { const nextSeed = seed + 1; setSeed(nextSeed); setPlan(generatePlan(prefs, nextSeed)); setBought(new Set()); setQuantityOverrides({}); };
   const updatePrefs = (next: Partial<Preferences>) => setPrefs((current) => ({ ...current, ...next }));
   const saveSettings = () => { setPlan(generatePlan(prefs, seed + 1)); setSeed(seed + 1); setSettingsOpen(false); setBought(new Set()); setQuantityOverrides({}); };
-  const page = location === '/shopping' ? <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} setQuantityOverrides={setQuantityOverrides} /> : location === '/costs' ? <CostsPage shopping={shopping} prefs={prefs} totalCost={totalCost} plan={plan} /> : location === '/ask-ai' ? <AskAiPage prefs={prefs} plan={plan} /> : <HomePage plan={plan} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} />;
+  const page = location === '/shopping' ? <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} setQuantityOverrides={setQuantityOverrides} /> : location === '/costs' ? <CostsPage shopping={shopping} prefs={prefs} totalCost={totalCost} plan={plan} /> : location === '/ask-ai' ? <AskAiPageV2 prefs={prefs} /> : <HomePage plan={plan} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} />;
   return <div className="app-shell grain"><header className="content-wrap pt-5 md:pt-8"><div className="flex items-start justify-between gap-4"><Link href="/" className="flex items-center gap-3 no-underline" data-testid="link-home"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_5px_0_hsl(13_72%_43%)]"><ChefHat size={23} strokeWidth={2.4} /></span><span><span className="display-font block text-xl font-bold tracking-tight text-primary">30 Phút</span><span className="block text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">Yêu thương</span></span></Link><div className="top-actions flex items-center gap-2"><span className="hidden rounded-full bg-secondary px-3 py-1.5 text-xs font-bold text-secondary-foreground sm:inline-flex">Tuần của nhà mình</span><button onClick={() => window.print()} className="tactile flex h-10 w-10 items-center justify-center rounded-full border bg-card text-muted-foreground" aria-label="In trang" data-testid="button-print"><Printer size={17} /></button></div></div></header><main className="content-wrap page-enter">{page}</main><BottomNav location={location} /></div>;
 }
 
@@ -282,6 +282,121 @@ function CostsPage({ shopping, prefs, totalCost, plan }: { shopping: Aggregate; 
 function StatCard({ label, value, accent = '' }: { label: string; value: string; accent?: string }) { return <section className={`paper-card p-5 ${accent === 'primary' ? 'bg-primary text-primary-foreground' : accent === 'sage' ? 'bg-secondary' : accent === 'berry' ? 'bg-[hsl(12_100%_93%)]' : ''}`}><p className={`text-xs font-bold ${accent === 'primary' ? 'text-primary-foreground/75' : 'text-muted-foreground'}`}>{label}</p><p className="display-font mt-2 text-2xl font-bold">{value}</p></section>; }
 
 function AskAiPage({ prefs, plan }: { prefs: Preferences; plan: DayPlan[] }) { const [question, setQuestion] = useState(''); const [messages, setMessages] = useState<{ from: 'ai' | 'me'; text: string }[]>([{ from: 'ai', text: 'Mình ở đây để giúp bữa cơm hôm nay nhẹ đầu hơn. Bạn có thể hỏi về món thay thế, lượng ăn của bé, hoặc cách tận dụng nguyên liệu trong danh sách.' }]); const ask = () => { const text = question.trim(); if (!text) return; const lower = normalize(text); let answer = 'Theo thực đơn tuần này, bạn có thể giữ món chính và đổi phần rau hoặc canh sang món cùng nhóm. Như vậy danh sách đi chợ và dinh dưỡng vẫn cân bằng.'; if (lower.includes('be') || lower.includes('tre')) answer = 'Phần của trẻ nhỏ đang được tính theo hệ số 0,55. Bạn nên múc phần nhạt trước, cắt nhỏ cá và rau, rồi mới nêm đậm hơn cho người lớn.'; else if (lower.includes('nhanh') || lower.includes('phut')) answer = `Bữa nhanh nhất hôm nay là ${plan[0].breakfast.name}, khoảng ${plan[0].breakfast.time} phút. Với bữa chính, ưu tiên hấp đạm và luộc rau cùng lúc để giữ mốc ${prefs.maxTime} phút.`; else if (lower.includes('di ung') || lower.includes('tranh')) answer = prefs.allergies.length || prefs.allergyOther ? `Mình đã loại ${prefs.allergies.join(', ')}${prefs.allergyOther ? ` và ${prefs.allergyOther}` : ''} khỏi gợi ý. Nếu thấy món nào chưa phù hợp, hãy mở Thiết lập nhà mình để cập nhật.` : 'Nhà mình chưa ghi nhận dị ứng nào. Bạn có thể mở Thiết lập nhà mình và thêm ngay, thực đơn sẽ lọc lại.'; else if (lower.includes('nguyen lieu') || lower.includes('con gi')) answer = 'Bạn có thể ưu tiên dùng hết bí đỏ, cà chua và đậu hũ trong tuần này — đây là những nguyên liệu xuất hiện ở nhiều món và dễ bảo quản.'; setMessages([...messages, { from: 'me', text }, { from: 'ai', text: answer }]); setQuestion(''); }; return <div className="mx-auto max-w-3xl space-y-5"><section className="rounded-[28px] bg-foreground p-6 text-background md:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.17em] text-accent">Bếp nhà mình</p><h1 className="display-font mt-2 text-4xl font-bold tracking-tight">Hỏi gì cũng được.</h1><p className="mt-3 max-w-lg text-sm leading-6 text-background/70">Một trợ lý nhỏ, nhớ thực đơn và những điều gia đình bạn cần tránh.</p></div><span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground"><Sparkles size={22} /></span></div><div className="mt-6 flex flex-wrap gap-2">{['Món nào nhanh nhất?', 'Bé ăn phần nào?', 'Có thể đổi nguyên liệu không?'].map((prompt) => <button key={prompt} onClick={() => setQuestion(prompt)} className="rounded-full border border-background/15 bg-background/10 px-3 py-2 text-xs font-bold text-background/80 hover:bg-background/15" data-testid={`button-prompt-${prompt}`}>{prompt}</button>)}</div></section><section className="paper-card flex min-h-[390px] flex-col p-4 md:p-6"><div className="flex-1 space-y-4">{messages.map((message, index) => <div key={`${message.from}-${index}`} className={`flex gap-3 ${message.from === 'me' ? 'justify-end' : ''}`}><span className={`mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${message.from === 'ai' ? 'bg-secondary text-secondary-foreground' : 'bg-primary text-primary-foreground'}`}>{message.from === 'ai' ? <MessageCircle size={15} /> : <Users size={15} />}</span><p className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-6 ${message.from === 'ai' ? 'bg-muted' : 'bg-primary text-primary-foreground'}`} data-testid={`text-ai-message-${index}`}>{message.text}</p></div>)}</div><div className="mt-6 flex items-center gap-2 rounded-2xl border bg-background p-2 focus-within:ring-2 focus-within:ring-primary"><Search size={17} className="ml-2 text-muted-foreground" /><input value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && ask()} placeholder="Hỏi về bữa cơm nhà mình..." className="min-w-0 flex-1 bg-transparent px-1 py-2 text-sm outline-none" data-testid="input-ask-ai" /><button onClick={ask} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground" aria-label="Gửi câu hỏi" data-testid="button-ask-ai"><Send size={16} /></button></div></section><p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground"><CircleHelp size={15} className="mt-0.5 shrink-0" /> Gợi ý địa phương, không thay thế tư vấn y khoa. Luôn kiểm tra dị ứng trước khi nấu cho trẻ nhỏ.</p></div>; }
+
+type FridgeAiResult = { ingredients: { name: string; confidence: number }[]; dishes: { name: string; why: string; ingredients: string[]; steps: string[]; nutrition: { calories: number; protein: number; fat: number } }[]; safetyNotes: string[] };
+type RecipeAiResult = { dishName: string; servings: number; ingredients: { name: string; amount: string }[]; steps: string[]; nutrition: { calories: number; protein: number; fat: number }; safetyNotes: string[] };
+
+function AskAiPageV2({ prefs }: { prefs: Preferences }) {
+  const [mode, setMode] = useState<'fridge' | 'recipe'>('fridge');
+  const [imageData, setImageData] = useState('');
+  const [imageMime, setImageMime] = useState('image/jpeg');
+  const [imagePreview, setImagePreview] = useState('');
+  const [recipeName, setRecipeName] = useState('');
+  const [fridgeResult, setFridgeResult] = useState<FridgeAiResult | null>(null);
+  const [recipeResult, setRecipeResult] = useState<RecipeAiResult | null>(null);
+  const [loading, setLoading] = useState<'fridge' | 'recipe' | null>(null);
+  const [error, setError] = useState('');
+  const safety = { kids: prefs.kids, allergies: prefs.allergies, allergyOther: prefs.allergyOther };
+  const allergyText = [...prefs.allergies, ...prefs.allergyOther.split(',').map((item) => item.trim()).filter(Boolean)];
+
+  const onImageSelected = async (file?: File) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setError('Bạn hãy chọn một tệp hình ảnh.');
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setError('Ảnh quá lớn. Bạn hãy chọn ảnh dưới 8 MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      setImageData(dataUrl);
+      setImagePreview(dataUrl);
+      setImageMime(file.type || 'image/jpeg');
+      setFridgeResult(null);
+      setError('');
+    };
+    reader.onerror = () => setError('Không đọc được ảnh. Bạn hãy thử lại.');
+    reader.readAsDataURL(file);
+  };
+
+  const analyzeFridge = async () => {
+    if (!imageData) {
+      setError('Hãy chụp hoặc tải ảnh tủ lạnh trước nhé.');
+      return;
+    }
+    setLoading('fridge');
+    setError('');
+    try {
+      const response = await fetch('/api/ai/fridge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ imageData, mimeType: imageMime, safety }) });
+      const data = await response.json() as FridgeAiResult & { error?: string };
+      if (!response.ok) throw new Error(data.error || 'AI chưa trả lời được.');
+      setFridgeResult(data);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'AI chưa trả lời được. Bạn hãy thử lại.');
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const lookupRecipe = async () => {
+    const dishName = recipeName.trim();
+    if (!dishName) {
+      setError('Hãy nhập tên món bạn muốn tra.');
+      return;
+    }
+    setLoading('recipe');
+    setError('');
+    try {
+      const response = await fetch('/api/ai/recipe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dishName, safety }) });
+      const data = await response.json() as RecipeAiResult & { error?: string };
+      if (!response.ok) throw new Error(data.error || 'AI chưa trả lời được.');
+      setRecipeResult(data);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'AI chưa trả lời được. Bạn hãy thử lại.');
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  return <div className="mx-auto max-w-5xl space-y-5 pb-5">
+    <section className="rounded-[28px] bg-foreground p-6 text-background md:p-8">
+      <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.17em] text-accent">Trợ lý bếp Gemini</p><h1 className="display-font mt-2 text-4xl font-bold tracking-tight">Hỏi gì cũng được.</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-background/70">Đưa ảnh tủ lạnh hoặc tên món ăn. AI sẽ gợi ý cách nấu nhanh, nhạt và hợp với nhà mình.</p></div><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground"><Sparkles size={22} /></span></div>
+      <div className="mt-6 grid gap-2 sm:grid-cols-2"><button onClick={() => setMode('fridge')} className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${mode === 'fridge' ? 'border-accent bg-accent text-foreground' : 'border-background/15 bg-background/10 text-background'}`} data-testid="button-ai-fridge-mode"><Camera size={19} /><span><span className="block text-sm font-bold">📷 Nhìn ảnh tủ lạnh</span><span className="mt-0.5 block text-[11px] opacity-75">Nhận diện nguyên liệu, gợi ý 3 món</span></span></button><button onClick={() => setMode('recipe')} className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${mode === 'recipe' ? 'border-accent bg-accent text-foreground' : 'border-background/15 bg-background/10 text-background'}`} data-testid="button-ai-recipe-mode"><BookOpen size={19} /><span><span className="block text-sm font-bold">📖 Tra cách nấu</span><span className="mt-0.5 block text-[11px] opacity-75">Định lượng 1 khẩu phần và dinh dưỡng</span></span></button></div>
+    </section>
+    {allergyText.length > 0 && <div className="flex items-start gap-3 rounded-2xl border border-[hsl(13_80%_56%/.3)] bg-[hsl(12_100%_93%)] p-4 text-sm"><AlertCircle size={18} className="mt-0.5 shrink-0 text-primary" /><p><span className="font-bold">AI sẽ tự né:</span> {allergyText.join(', ')}.</p></div>}
+    {prefs.kids > 0 && <div className="flex items-start gap-3 rounded-2xl border border-[hsl(105_40%_45%/.3)] bg-secondary p-4 text-sm"><Utensils size={18} className="mt-0.5 shrink-0 text-[hsl(105_33%_30%)]" /><p><span className="font-bold">Quy tắc an toàn đang bật:</span> không gợi ý mật ong cho gia đình có trẻ nhỏ; luôn ưu tiên vị nhạt và ít dầu mỡ.</p></div>}
+    {error && <div className="flex items-start gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive" role="alert"><AlertCircle size={18} className="mt-0.5 shrink-0" /><p>{error}</p><button onClick={() => setError('')} className="ml-auto rounded-full p-1" aria-label="Đóng thông báo lỗi"><X size={15} /></button></div>}
+    {mode === 'fridge' ? <section className="space-y-4">
+      <div className="paper-card p-5 md:p-6"><div className="grid gap-5 md:grid-cols-[.9fr_1.1fr] md:items-center"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-primary">Bước 1</p><h2 className="display-font mt-1 text-2xl font-bold">Cho mình xem tủ lạnh</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Ảnh càng đủ sáng, AI càng dễ nhận diện rau, thịt, cá và gia vị.</p><label className="mt-4 flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 px-4 py-3 text-sm font-bold text-primary hover:bg-primary/10"><ImagePlus size={18} /> Chụp hoặc tải ảnh<input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(event) => onImageSelected(event.target.files?.[0])} data-testid="input-fridge-image" /></label></div><div className="relative flex min-h-44 items-center justify-center overflow-hidden rounded-2xl bg-muted">{imagePreview ? <><img src={imagePreview} alt="Ảnh nguyên liệu đã chọn" className="max-h-64 w-full object-cover" /><button onClick={() => { setImageData(''); setImagePreview(''); setFridgeResult(null); }} className="absolute right-2 top-2 rounded-full bg-foreground/80 p-2 text-background" aria-label="Xóa ảnh đã chọn" data-testid="button-remove-fridge-image"><X size={15} /></button></> : <div className="text-center text-muted-foreground"><Upload size={24} className="mx-auto" /><p className="mt-2 text-xs">Chưa có ảnh</p></div>}</div></div><button onClick={analyzeFridge} disabled={loading !== null || !imageData} className="tactile mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-[0_4px_0_hsl(13_72%_43%)] disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-analyze-fridge">{loading === 'fridge' ? <><LoaderCircle size={17} className="animate-spin" /> AI đang nhìn ảnh...</> : <><Camera size={17} /> Nhận diện nguyên liệu & gợi ý món</>}</button></div>
+      {loading === 'fridge' && <AiLoadingCard text="AI đang xem tủ lạnh và cân đối 3 món trong 30 phút..." />}
+      {fridgeResult && <FridgeResultCard result={fridgeResult} />}
+    </section> : <section className="space-y-4">
+      <div className="paper-card p-5 md:p-6"><p className="text-xs font-bold uppercase tracking-[.15em] text-primary">Tên món muốn tra</p><div className="mt-3 flex flex-col gap-2 sm:flex-row"><input value={recipeName} onChange={(event) => setRecipeName(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && lookupRecipe()} placeholder="Ví dụ: cá basa hấp gừng" className="min-w-0 flex-1 rounded-xl border bg-background px-4 py-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-recipe-name" /><button onClick={lookupRecipe} disabled={loading !== null} className="tactile inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-bold text-primary-foreground disabled:opacity-50" data-testid="button-lookup-recipe">{loading === 'recipe' ? <LoaderCircle size={17} className="animate-spin" /> : <Search size={17} />} Tra cách nấu</button></div><div className="mt-3 flex flex-wrap gap-2">{['Canh bí đỏ nấu tôm khô', 'Ức gà áp chảo rau củ', 'Cháo trứng bí đỏ'].map((suggestion) => <button key={suggestion} onClick={() => setRecipeName(suggestion)} className="rounded-full bg-secondary px-3 py-1.5 text-[11px] font-bold text-secondary-foreground" data-testid={`button-recipe-suggestion-${suggestion}`}>{suggestion}</button>)}</div></div>
+      {loading === 'recipe' && <AiLoadingCard text="AI đang định lượng, giảm dầu và tính dinh dưỡng..." />}
+      {recipeResult && <RecipeResultCard result={recipeResult} />}
+    </section>}
+    <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground"><CircleHelp size={15} className="mt-0.5 shrink-0" /> Gợi ý AI chỉ mang tính tham khảo. Luôn kiểm tra dị ứng, độ chín của thịt cá và độ tuổi của trẻ trước khi ăn.</p>
+  </div>;
+}
+
+function AiLoadingCard({ text }: { text: string }) {
+  return <div className="paper-card flex items-center gap-3 border-primary/20 bg-primary/5 p-5" aria-live="polite"><LoaderCircle size={21} className="animate-spin text-primary" /><div><p className="text-sm font-bold">Gemini đang suy nghĩ</p><p className="mt-1 text-xs text-muted-foreground">{text}</p></div><span className="ml-auto flex gap-1"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" /><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary [animation-delay:150ms]" /><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary [animation-delay:300ms]" /></span></div>;
+}
+
+function NutritionSummaryCard({ nutrition }: { nutrition: { calories: number; protein: number; fat: number } }) {
+  return <div className="grid grid-cols-3 gap-2"><div className="rounded-xl bg-[hsl(43_100%_61%/.18)] p-3 text-center"><p className="text-[10px] font-bold uppercase text-muted-foreground">Calo</p><p className="mt-1 text-lg font-bold">{Math.round(nutrition.calories)}</p><p className="text-[10px] text-muted-foreground">kcal</p></div><div className="rounded-xl bg-secondary p-3 text-center"><p className="text-[10px] font-bold uppercase text-muted-foreground">Đạm</p><p className="mt-1 text-lg font-bold">{nutrition.protein.toFixed(1)}</p><p className="text-[10px] text-muted-foreground">g</p></div><div className="rounded-xl bg-[hsl(12_100%_93%)] p-3 text-center"><p className="text-[10px] font-bold uppercase text-muted-foreground">Béo</p><p className="mt-1 text-lg font-bold">{nutrition.fat.toFixed(1)}</p><p className="text-[10px] text-muted-foreground">g</p></div></div>;
+}
+
+function FridgeResultCard({ result }: { result: FridgeAiResult }) {
+  return <div className="space-y-4"><section className="paper-card p-5"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-primary">AI nhìn thấy</p><h2 className="display-font mt-1 text-2xl font-bold">Nguyên liệu trong ảnh</h2></div><Check size={21} className="text-[hsl(105_40%_45%)]" /></div><div className="mt-4 flex flex-wrap gap-2">{result.ingredients.map((ingredient) => <span key={ingredient.name} className="rounded-full bg-secondary px-3 py-2 text-xs font-bold">{ingredient.name}<span className="ml-1 text-[10px] font-normal text-muted-foreground">{Math.round(ingredient.confidence * 100)}%</span></span>)}</div></section><div className="grid gap-4 lg:grid-cols-3">{result.dishes.map((dish, index) => <article key={`${dish.name}-${index}`} className="paper-card flex flex-col p-5"><div className="flex items-start justify-between gap-3"><div><span className="text-[10px] font-bold uppercase tracking-[.15em] text-primary">Món {index + 1}</span><h3 className="display-font mt-1 text-xl font-bold">{dish.name}</h3></div><Utensils size={19} className="shrink-0 text-secondary-foreground" /></div><p className="mt-3 text-xs leading-5 text-muted-foreground">{dish.why}</p><div className="mt-4"><p className="text-xs font-bold uppercase tracking-[.12em] text-muted-foreground">Nguyên liệu</p><ul className="mt-2 space-y-1 text-sm">{dish.ingredients.map((item) => <li key={item} className="flex gap-2"><span className="text-primary">•</span>{item}</li>)}</ul></div><div className="mt-4"><p className="text-xs font-bold uppercase tracking-[.12em] text-muted-foreground">Cách làm nhanh</p><ol className="mt-2 space-y-2 text-sm leading-5">{dish.steps.map((step, stepIndex) => <li key={step} className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">{stepIndex + 1}</span>{step}</li>)}</ol></div><div className="mt-auto pt-5"><NutritionSummaryCard nutrition={dish.nutrition} /></div></article>)}</div>{result.safetyNotes.length > 0 && <section className="paper-card border-secondary bg-secondary/50 p-5"><p className="text-xs font-bold uppercase tracking-[.12em] text-secondary-foreground">Lưu ý an toàn</p><ul className="mt-2 space-y-1 text-sm leading-5">{result.safetyNotes.map((note) => <li key={note}>• {note}</li>)}</ul></section>}</div>;
+}
+
+function RecipeResultCard({ result }: { result: RecipeAiResult }) {
+  return <section className="paper-card p-5 md:p-6"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-primary">Công thức 1 khẩu phần</p><h2 className="display-font mt-1 text-3xl font-bold">{result.dishName}</h2></div><span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-secondary px-3 py-2 text-xs font-bold"><Clock3 size={14} /> Nhạt · ít dầu</span></div><div className="mt-5 grid gap-5 lg:grid-cols-[.8fr_1.2fr]"><div><p className="text-xs font-bold uppercase tracking-[.12em] text-muted-foreground">Định lượng nguyên liệu</p><ul className="mt-3 divide-y rounded-2xl border bg-background">{result.ingredients.map((ingredient) => <li key={ingredient.name} className="flex justify-between gap-3 px-3 py-2.5 text-sm"><span>{ingredient.name}</span><span className="font-bold text-primary">{ingredient.amount}</span></li>)}</ul><div className="mt-4"><NutritionSummaryCard nutrition={result.nutrition} /></div></div><div><p className="text-xs font-bold uppercase tracking-[.12em] text-muted-foreground">Các bước nấu</p><ol className="mt-3 space-y-3">{result.steps.map((step, index) => <li key={step} className="flex gap-3 text-sm leading-6"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-primary text-xs font-bold text-primary-foreground">{index + 1}</span><span>{step}</span></li>)}</ol></div></div>{result.safetyNotes.length > 0 && <div className="mt-5 rounded-2xl bg-secondary/70 p-4"><p className="text-xs font-bold uppercase tracking-[.12em] text-secondary-foreground">Lưu ý cho nhà mình</p><ul className="mt-2 space-y-1 text-sm leading-5">{result.safetyNotes.map((note) => <li key={note}>• {note}</li>)}</ul></div>}</section>;
+}
 
 function BottomNav({ location }: { location: string }) { const items = [{ href: '/', label: 'Thực đơn', icon: ChefHat }, { href: '/shopping', label: 'Đi chợ', icon: ShoppingBasket }, { href: '/costs', label: 'Chi phí', icon: WalletCards }, { href: '/ask-ai', label: 'Hỏi AI', icon: Sparkles }]; return <nav className="bottom-nav safe-bottom fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 px-2 pt-2 shadow-[0_-8px_24px_rgba(86,51,22,.08)] backdrop-blur md:sticky md:bottom-auto md:mx-auto md:mt-4 md:w-[min(680px,calc(100%-40px))] md:rounded-2xl md:border md:px-3 md:py-2"><div className="mx-auto grid max-w-xl grid-cols-4 gap-1">{items.map(({ href, label, icon: Icon }) => { const active = href === '/' ? location === '/' : location.startsWith(href); return <Link key={href} href={href} className={`flex flex-col items-center gap-1 rounded-xl px-2 py-2 text-[10px] font-bold transition-colors ${active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`} data-testid={`link-nav-${label}`}><Icon size={18} strokeWidth={active ? 2.6 : 2} /><span>{label}</span></Link>; })}</div></nav>; }
 

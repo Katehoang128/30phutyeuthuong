@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: ai
+    description: Gemini-powered cooking assistance
 paths:
   /healthz:
     get:
@@ -24,6 +26,50 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /ai/fridge:
+    post:
+      operationId: analyzeFridgeImage
+      tags: [ai]
+      summary: Identify ingredients from a fridge image
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FridgeAnalysisRequest"
+      responses:
+        "200":
+          description: Ingredients and three recipe ideas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FridgeAnalysisResponse"
+        "400":
+          description: Invalid input
+        "502":
+          description: AI provider error
+  /ai/recipe:
+    post:
+      operationId: lookupRecipe
+      tags: [ai]
+      summary: Look up a lighter recipe and nutrition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecipeLookupRequest"
+      responses:
+        "200":
+          description: Recipe instructions and nutrition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecipeLookupResponse"
+        "400":
+          description: Invalid input
+        "502":
+          description: AI provider error
 components:
   schemas:
     HealthStatus:
@@ -33,4 +79,156 @@ components:
           type: string
       required:
         - status
+    SafetyContext:
+      type: object
+      properties:
+        kids:
+          type: integer
+          minimum: 0
+        allergies:
+          type: array
+          items:
+            type: string
+        allergyOther:
+          type: string
+      required:
+        - kids
+        - allergies
+        - allergyOther
+    FridgeAnalysisRequest:
+      type: object
+      properties:
+        imageData:
+          type: string
+          description: Base64 data URL for an uploaded food or fridge image
+        mimeType:
+          type: string
+        safety:
+          $ref: "#/components/schemas/SafetyContext"
+      required:
+        - imageData
+        - mimeType
+        - safety
+    FridgeIngredient:
+      type: object
+      properties:
+        name:
+          type: string
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+      required:
+        - name
+        - confidence
+    NutritionSummary:
+      type: object
+      properties:
+        calories:
+          type: number
+          minimum: 0
+        protein:
+          type: number
+          minimum: 0
+        fat:
+          type: number
+          minimum: 0
+      required:
+        - calories
+        - protein
+        - fat
+    FridgeDish:
+      type: object
+      properties:
+        name:
+          type: string
+        why:
+          type: string
+        ingredients:
+          type: array
+          items:
+            type: string
+        steps:
+          type: array
+          items:
+            type: string
+        nutrition:
+          $ref: "#/components/schemas/NutritionSummary"
+      required:
+        - name
+        - why
+        - ingredients
+        - steps
+        - nutrition
+    FridgeAnalysisResponse:
+      type: object
+      properties:
+        ingredients:
+          type: array
+          items:
+            $ref: "#/components/schemas/FridgeIngredient"
+        dishes:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            $ref: "#/components/schemas/FridgeDish"
+        safetyNotes:
+          type: array
+          items:
+            type: string
+      required:
+        - ingredients
+        - dishes
+        - safetyNotes
+    RecipeLookupRequest:
+      type: object
+      properties:
+        dishName:
+          type: string
+          minLength: 1
+        safety:
+          $ref: "#/components/schemas/SafetyContext"
+      required:
+        - dishName
+        - safety
+    RecipeIngredient:
+      type: object
+      properties:
+        name:
+          type: string
+        amount:
+          type: string
+      required:
+        - name
+        - amount
+    RecipeLookupResponse:
+      type: object
+      properties:
+        dishName:
+          type: string
+        servings:
+          type: integer
+          minimum: 1
+        ingredients:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecipeIngredient"
+        steps:
+          type: array
+          items:
+            type: string
+        nutrition:
+          $ref: "#/components/schemas/NutritionSummary"
+        safetyNotes:
+          type: array
+          items:
+            type: string
+      required:
+        - dishName
+        - servings
+        - ingredients
+        - steps
+        - nutrition
+        - safetyNotes
 
