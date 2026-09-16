@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Link, Router as WouterRouter, useLocation } from 'wouter';
-import { AlertCircle, ArrowUpRight, BadgeCheck, BookOpen, Camera, Check, ChefHat, ChevronDown, ChevronUp, CircleHelp, Clock3, Copy, ExternalLink, Heart, ImagePlus, Leaf, LoaderCircle, MessageCircle, Plus, Printer, RefreshCw, Search, Send, Share2, ShoppingBasket, SlidersHorizontal, Sparkles, Trash2, Upload, Users, Utensils, WalletCards, X } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, BadgeCheck, BookOpen, Camera, Check, ChefHat, ChevronDown, ChevronUp, CircleHelp, Clock3, Copy, Crown, ExternalLink, Heart, ImagePlus, Leaf, LoaderCircle, LockKeyhole, Mail, MessageCircle, Plus, Printer, QrCode, RefreshCw, Search, Send, Share2, ShoppingBasket, SlidersHorizontal, Smartphone, Sparkles, Trash2, Upload, Users, Utensils, WalletCards, X } from 'lucide-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { BREAKFAST, CANH, DAM, DAILY_TARGET, DAY_NAMES, Dish, NUTRITION_PER_100G, PANTRY_COST, PRICE, RAU, RICE_PER_UNIT } from './data';
+import { trackEvent } from './analytics';
 
 const queryClient = new QueryClient();
 type Budget = 'tietkiem' | 'vua' | 'thoaimai';
@@ -14,10 +15,31 @@ type Preferences = { kids: number; elderly: number; adults: number; maxTime: num
 type MealSet = { dam: Dish; rau: Dish; canh: Dish };
 type DayPlan = { day: string; breakfast: Dish; lunch: MealSet; dinner: MealSet };
 type Aggregate = Record<string, { qty: number; unit?: string }>;
+type ProQr = { qrUrl: string; transferContent: string; amount: number };
+type AiUsage = { month: string; count: number };
 
 const initialPreferences: Preferences = { kids: 1, elderly: 0, adults: 2, maxTime: 30, budget: 'vua', veg: '0', allergies: [], allergyOther: '', favoriteIngredients: '' };
 const allergyOptions = [{ value: 'Tôm tươi', label: 'Hải sản' }, { value: 'Trứng gà', label: 'Trứng' }, { value: 'Sữa tươi không đường', label: 'Sữa' }, { value: 'Đậu phộng', label: 'Đậu phộng / hạt' }];
 const budgetLabels: Record<Budget, string> = { tietkiem: 'Tiết kiệm', vua: 'Vừa phải', thoaimai: 'Thoải mái' };
+const FREE_DAY_LIMIT = 3;
+const FREE_AI_LIMIT = 3;
+const PRO_PRICE = 49_000;
+const PRO_STORAGE_KEY = '30phut-pro-unlocked';
+const AI_USAGE_STORAGE_KEY = '30phut-ai-usage';
+const NEWSLETTER_STORAGE_KEY = '30phut-newsletter-email';
+
+function currentMonth() {
+  return new Date().toISOString().slice(0, 7);
+}
+
+function readAiUsage(): AiUsage {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(AI_USAGE_STORAGE_KEY) || 'null') as Partial<AiUsage> | null;
+    return saved?.month === currentMonth() && typeof saved.count === 'number' ? { month: saved.month, count: saved.count } : { month: currentMonth(), count: 0 };
+  } catch {
+    return { month: currentMonth(), count: 0 };
+  }
+}
 
 function unitsOf(p: Preferences) { return p.adults + p.elderly * .8 + p.kids * .55; }
 function money(value: number) { return `${Math.round(value).toLocaleString('vi-VN')} đ`; }
@@ -130,6 +152,8 @@ function Shell() {
   const [prefs, setPrefs] = useState(initialPreferences);
   const [seed, setSeed] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [isPro, setIsPro] = useState(() => window.localStorage.getItem(PRO_STORAGE_KEY) === 'true');
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [plan, setPlan] = useState(() => generatePlan(initialPreferences));
   const [bought, setBought] = useState<Set<string>>(new Set());
   const [customItems, setCustomItems] = useState<{ name: string; bought: boolean }[]>([]);
@@ -138,31 +162,117 @@ function Shell() {
   const [expandedDay, setExpandedDay] = useState(0);
   const [activeMeal, setActiveMeal] = useState<'all' | 'breakfast' | 'lunch' | 'dinner'>('all');
   const units = unitsOf(prefs);
+  const accessiblePlan = isPro ? plan : plan.slice(0, FREE_DAY_LIMIT);
   const shopping = useMemo(() => {
-    const base = aggregate(plan, units);
+    const base = aggregate(accessiblePlan, units);
     Object.entries(quantityOverrides).forEach(([name, qty]) => {
       if (base[name] && qty >= 0) base[name] = { ...base[name], qty };
     });
     return base;
-  }, [plan, units, quantityOverrides]);
+  }, [accessiblePlan, units, quantityOverrides]);
   const totalCost = useMemo(() => Object.entries(shopping).reduce((sum, [name, item]) => bought.has(name) ? sum : sum + priceFor(name, item.qty), 0) + PANTRY_COST[prefs.budget], [shopping, bought, prefs.budget]);
-  const regenerate = () => { const nextSeed = seed + 1; setSeed(nextSeed); setPlan(generatePlan(prefs, nextSeed)); setBought(new Set()); setQuantityOverrides({}); };
+  const regenerate = () => { const nextSeed = seed + 1; setSeed(nextSeed); setPlan(generatePlan(prefs, nextSeed)); setBought(new Set()); setQuantityOverrides({}); trackEvent('menu_regenerated', { membership: isPro ? 'pro' : 'free' }); };
   const updatePrefs = (next: Partial<Preferences>) => setPrefs((current) => ({ ...current, ...next }));
   const saveSettings = () => { setPlan(generatePlan(prefs, seed + 1)); setSeed(seed + 1); setSettingsOpen(false); setBought(new Set()); setQuantityOverrides({}); };
-  const page = location === '/shopping' ? <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} setQuantityOverrides={setQuantityOverrides} /> : location === '/costs' ? <CostsPage shopping={shopping} prefs={prefs} totalCost={totalCost} plan={plan} /> : location === '/ask-ai' ? <AskAiPageV2 prefs={prefs} /> : <HomePage plan={plan} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} />;
-  return <div className="app-shell grain"><header className="content-wrap pt-5 md:pt-8"><div className="flex items-start justify-between gap-4"><Link href="/" className="flex items-center gap-3 no-underline" data-testid="link-home"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_5px_0_hsl(13_72%_43%)]"><ChefHat size={23} strokeWidth={2.4} /></span><span><span className="display-font block text-xl font-bold tracking-tight text-primary">30 Phút</span><span className="block text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">Yêu thương</span></span></Link><div className="top-actions flex items-center gap-2"><span className="hidden rounded-full bg-secondary px-3 py-1.5 text-xs font-bold text-secondary-foreground sm:inline-flex">Tuần của nhà mình</span><button onClick={() => window.print()} className="tactile flex h-10 w-10 items-center justify-center rounded-full border bg-card text-muted-foreground" aria-label="In trang" data-testid="button-print"><Printer size={17} /></button></div></div></header><main className="content-wrap page-enter">{page}</main><BottomNav location={location} /></div>;
+  const unlockPro = () => {
+    window.localStorage.setItem(PRO_STORAGE_KEY, 'true');
+    setIsPro(true);
+    setUpgradeOpen(false);
+    trackEvent('pro_unlocked', { plan: 'monthly_49000' });
+  };
+  const openUpgrade = (source: string) => {
+    trackEvent('pro_upgrade_opened', { source });
+    setUpgradeOpen(true);
+  };
+  const page = location === '/shopping' ? <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} setQuantityOverrides={setQuantityOverrides} /> : location === '/costs' ? <CostsPage shopping={shopping} prefs={prefs} totalCost={totalCost} plan={accessiblePlan} /> : location === '/ask-ai' ? <AskAiPageV2 prefs={prefs} isPro={isPro} onUpgrade={() => openUpgrade('ai_limit')} /> : <HomePage plan={plan} isPro={isPro} onUpgrade={() => openUpgrade('locked_week')} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} />;
+  return <div className="app-shell grain"><header className="content-wrap pt-5 md:pt-8"><div className="flex items-start justify-between gap-4"><Link href="/" className="flex items-center gap-3 no-underline" data-testid="link-home"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_5px_0_hsl(13_72%_43%)]"><ChefHat size={23} strokeWidth={2.4} /></span><span><span className="display-font block text-xl font-bold tracking-tight text-primary">30 Phút</span><span className="block text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">Yêu thương</span></span></Link><div className="top-actions flex items-center gap-2">{isPro ? <span className="inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-xs font-bold text-accent-foreground"><Crown size={13} /> Thành viên Pro</span> : <button onClick={() => openUpgrade('header')} className="tactile inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-2 text-xs font-bold text-primary-foreground" data-testid="button-header-upgrade"><Crown size={13} /> Nâng cấp Pro</button>}<button onClick={() => window.print()} className="tactile flex h-10 w-10 items-center justify-center rounded-full border bg-card text-muted-foreground" aria-label="In trang" data-testid="button-print"><Printer size={17} /></button></div></div></header><main className="content-wrap page-enter">{page}</main><BottomNav location={location} /><ProUpgradeModal open={upgradeOpen} onClose={() => setUpgradeOpen(false)} onUnlocked={unlockPro} /></div>;
 }
 
-function HomePage({ plan, prefs, settingsOpen, setSettingsOpen, updatePrefs, saveSettings, regenerate, expandedDay, setExpandedDay, activeMeal, setActiveMeal, favoriteDishes, setFavoriteDishes }: { plan: DayPlan[]; prefs: Preferences; settingsOpen: boolean; setSettingsOpen: (value: boolean) => void; updatePrefs: (value: Partial<Preferences>) => void; saveSettings: () => void; regenerate: () => void; expandedDay: number; setExpandedDay: (value: number) => void; activeMeal: 'all' | 'breakfast' | 'lunch' | 'dinner'; setActiveMeal: (value: 'all' | 'breakfast' | 'lunch' | 'dinner') => void; favoriteDishes: Set<string>; setFavoriteDishes: (value: Set<string>) => void }) {
+function HomePage({ plan, isPro, onUpgrade, prefs, settingsOpen, setSettingsOpen, updatePrefs, saveSettings, regenerate, expandedDay, setExpandedDay, activeMeal, setActiveMeal, favoriteDishes, setFavoriteDishes }: { plan: DayPlan[]; isPro: boolean; onUpgrade: () => void; prefs: Preferences; settingsOpen: boolean; setSettingsOpen: (value: boolean) => void; updatePrefs: (value: Partial<Preferences>) => void; saveSettings: () => void; regenerate: () => void; expandedDay: number; setExpandedDay: (value: number) => void; activeMeal: 'all' | 'breakfast' | 'lunch' | 'dinner'; setActiveMeal: (value: 'all' | 'breakfast' | 'lunch' | 'dinner') => void; favoriteDishes: Set<string>; setFavoriteDishes: (value: Set<string>) => void }) {
   const today = plan[0];
   const household = `${prefs.kids + prefs.elderly + prefs.adults} người`;
+  const visiblePlan = isPro ? plan : plan.slice(0, FREE_DAY_LIMIT);
   return <div className="space-y-5 pb-5">
     <section className="relative overflow-hidden rounded-[28px] border border-[hsl(36_70%_82%)] bg-[linear-gradient(135deg,hsl(41_100%_91%),hsl(12_100%_93%)_55%,hsl(103_40%_90%))] px-5 py-6 shadow-[0_15px_35px_rgba(112,64,25,.08)] md:px-9 md:py-9"><div className="absolute -right-12 -top-16 h-44 w-44 rounded-full border-[18px] border-[hsl(43_100%_61%/.3)]" /><div className="relative max-w-2xl"><p className="mb-2 text-xs font-bold uppercase tracking-[.19em] text-[hsl(105_33%_30%)]">Bữa cơm hôm nay</p><h1 className="display-font max-w-xl text-[clamp(2.15rem,7vw,4.2rem)] font-bold leading-[.98] tracking-[-.04em] text-[hsl(13_72%_38%)]">Nấu nhanh một chút,<br /><span className="text-[hsl(105_33%_30%)]">thương nhau nhiều hơn.</span></h1><p className="mt-4 max-w-lg text-sm leading-6 text-muted-foreground">Một tuần đủ chất, vừa túi tiền và không làm bạn phải đứng bếp cả tối.</p><div className="mt-5 flex flex-wrap items-center gap-2"><span className="inline-flex items-center gap-1.5 rounded-full bg-card/80 px-3 py-2 text-xs font-bold text-foreground"><Users size={14} className="text-primary" /> {household}</span><span className="inline-flex items-center gap-1.5 rounded-full bg-card/80 px-3 py-2 text-xs font-bold text-foreground"><Clock3 size={14} className="text-[hsl(105_33%_30%)]" /> {prefs.maxTime} phút / bữa</span><span className="inline-flex items-center gap-1.5 rounded-full bg-card/80 px-3 py-2 text-xs font-bold text-foreground"><Leaf size={14} className="text-[hsl(105_33%_30%)]" /> {budgetLabels[prefs.budget]}</span></div></div></section>
     <SettingsPanel open={settingsOpen} setOpen={setSettingsOpen} prefs={prefs} updatePrefs={updatePrefs} saveSettings={saveSettings} />
     <section className="grid gap-5 lg:grid-cols-[1.15fr_.85fr]">
-      <div className="space-y-4"><div className="flex items-end justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-primary">Tuần này</p><h2 className="display-font mt-1 text-3xl font-bold tracking-tight">Mình ăn gì nhỉ?</h2></div><button onClick={regenerate} className="tactile inline-flex items-center gap-2 rounded-full border border-primary/30 bg-card px-3.5 py-2 text-xs font-bold text-primary" data-testid="button-regenerate"><RefreshCw size={14} /> Đổi tuần khác</button></div><div className="flex gap-2 overflow-x-auto pb-1" role="tablist">{[['all','Tất cả'],['breakfast','Bữa sáng'],['lunch','Bữa trưa'],['dinner','Bữa tối']].map(([value,label]) => <button key={value} onClick={() => setActiveMeal(value as typeof activeMeal)} className={`whitespace-nowrap rounded-full px-4 py-2 text-xs font-bold transition-colors ${activeMeal === value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}`} data-testid={`button-filter-${value}`}>{label}</button>)}</div>{plan.map((day, index) => <DayCard key={day.day} day={day} index={index} open={expandedDay === index} setOpen={() => setExpandedDay(expandedDay === index ? -1 : index)} activeMeal={activeMeal} favorites={favoriteDishes} setFavorites={setFavoriteDishes} />)}</div>
-      <aside className="space-y-4"><TodayCard day={today} prefs={prefs} /><NutritionCard plan={plan} prefs={prefs} /><div className="paper-card hidden overflow-hidden p-5 md:block"><div className="flex items-center gap-2 text-sm font-bold"><Sparkles size={17} className="text-primary" /> Mẹo để bếp nhẹ tênh</div><p className="mt-3 text-sm leading-6 text-muted-foreground">Sơ chế hành, gừng và rau củ ngay sau khi đi chợ. Đến bữa chỉ cần mở nồi hấp — 30 phút đủ cho cả nhà ngồi vào mâm.</p></div></aside>
+      <div className="space-y-4"><div className="flex items-end justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-primary">{isPro ? 'Trọn tuần' : 'Gói miễn phí · 3 ngày đầu'}</p><h2 className="display-font mt-1 text-3xl font-bold tracking-tight">Mình ăn gì nhỉ?</h2></div><button onClick={regenerate} className="tactile inline-flex items-center gap-2 rounded-full border border-primary/30 bg-card px-3.5 py-2 text-xs font-bold text-primary" data-testid="button-regenerate"><RefreshCw size={14} /> Đổi tuần khác</button></div><div className="flex gap-2 overflow-x-auto pb-1" role="tablist">{[['all','Tất cả'],['breakfast','Bữa sáng'],['lunch','Bữa trưa'],['dinner','Bữa tối']].map(([value,label]) => <button key={value} onClick={() => setActiveMeal(value as typeof activeMeal)} className={`whitespace-nowrap rounded-full px-4 py-2 text-xs font-bold transition-colors ${activeMeal === value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}`} data-testid={`button-filter-${value}`}>{label}</button>)}</div>{visiblePlan.map((day, index) => <DayCard key={day.day} day={day} index={index} open={expandedDay === index} setOpen={() => setExpandedDay(expandedDay === index ? -1 : index)} activeMeal={activeMeal} favorites={favoriteDishes} setFavorites={setFavoriteDishes} />)}{!isPro && <LockedWeekBanner onUpgrade={onUpgrade} />}</div>
+      <aside className="space-y-4"><TodayCard day={today} prefs={prefs} /><NutritionCard plan={visiblePlan} prefs={prefs} /><NewsletterSignup /><div className="paper-card hidden overflow-hidden p-5 md:block"><div className="flex items-center gap-2 text-sm font-bold"><Sparkles size={17} className="text-primary" /> Mẹo để bếp nhẹ tênh</div><p className="mt-3 text-sm leading-6 text-muted-foreground">Sơ chế hành, gừng và rau củ ngay sau khi đi chợ. Đến bữa chỉ cần mở nồi hấp — 30 phút đủ cho cả nhà ngồi vào mâm.</p></div></aside>
     </section>
+  </div>;
+}
+
+function LockedWeekBanner({ onUpgrade }: { onUpgrade: () => void }) {
+  return <section className="relative overflow-hidden rounded-[28px] border border-[hsl(43_100%_61%/.55)] bg-[linear-gradient(135deg,hsl(43_100%_61%/.25),hsl(13_80%_56%/.12))] p-5 shadow-[0_12px_28px_rgba(112,64,25,.08)] md:p-6">
+    <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-accent/30 blur-2xl" />
+    <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-start gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-foreground text-accent"><LockKeyhole size={20} /></span><div><p className="text-[10px] font-bold uppercase tracking-[.16em] text-primary">Ngày 4–7 đang khóa</p><h3 className="display-font mt-1 text-xl font-bold">🔒 Mở khóa thực đơn trọn tuần & Hỏi AI không giới hạn chỉ 49k/tháng</h3><p className="mt-2 text-xs leading-5 text-muted-foreground">Ăn đủ 7 ngày, nhận công thức đầy đủ và dùng trợ lý AI không giới hạn.</p></div></div>
+      <button onClick={onUpgrade} className="tactile inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-xs font-bold text-primary-foreground shadow-[0_4px_0_hsl(13_72%_43%)]" data-testid="button-upgrade-locked"><Crown size={15} /> Nâng cấp Pro</button>
+    </div>
+  </section>;
+}
+
+function NewsletterSignup() {
+  const [email, setEmail] = useState(() => window.localStorage.getItem(NEWSLETTER_STORAGE_KEY) || '');
+  const [saved, setSaved] = useState(() => Boolean(window.localStorage.getItem(NEWSLETTER_STORAGE_KEY)));
+  const subscribe = () => {
+    if (!email.trim() || !email.includes('@')) return;
+    window.localStorage.setItem(NEWSLETTER_STORAGE_KEY, email.trim());
+    setEmail(email.trim());
+    setSaved(true);
+    trackEvent('newsletter_subscribed', { placement: 'home_sidebar' });
+  };
+  return <section className="paper-card overflow-hidden border-primary/20 bg-primary/5 p-5">
+    <div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground"><Mail size={18} /></span><div><p className="text-xs font-bold uppercase tracking-[.14em] text-primary">Bản tin Chủ Nhật</p><h3 className="display-font mt-1 text-xl font-bold">Sáng Chủ Nhật, mình gửi món mới nhé?</h3><p className="mt-2 text-xs leading-5 text-muted-foreground">Nhận gợi ý thực đơn tuần mới và mẹo đi chợ gọn hơn qua email.</p></div></div>
+    <div className="mt-4 flex flex-col gap-2 sm:flex-row"><input type="email" value={email} onChange={(event) => { setEmail(event.target.value); setSaved(false); }} placeholder="email của bạn@example.com" className="min-w-0 flex-1 rounded-xl border bg-background px-3 py-2.5 text-sm outline-none ring-primary focus:ring-2" data-testid="input-newsletter-email" /><button onClick={subscribe} className="tactile inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground" data-testid="button-newsletter-subscribe"><Mail size={14} /> Nhận bản tin</button></div>
+    {saved && <p className="mt-2 text-xs font-bold text-[hsl(105_33%_30%)]" role="status"><Check size={13} className="mr-1 inline" /> Đã lưu email. Hẹn nhà mình sáng Chủ Nhật!</p>}
+  </section>;
+}
+
+function ProUpgradeModal({ open, onClose, onUnlocked }: { open: boolean; onClose: () => void; onUnlocked: () => void }) {
+  const [phone, setPhone] = useState('');
+  const [qr, setQr] = useState<ProQr | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!open) {
+      setPhone('');
+      setQr(null);
+      setLoading(false);
+      setError('');
+    }
+  }, [open]);
+
+  if (!open) return null;
+  const createQr = async () => {
+    const normalizedPhone = phone.replace(/\D/g, '');
+    if (normalizedPhone.length < 8 || normalizedPhone.length > 15) {
+      setError('Bạn hãy nhập số điện thoại từ 8 đến 15 số.');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const response = await fetch('/api/pro/qr', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: normalizedPhone }) });
+      const data = await response.json() as ProQr & { error?: string };
+      if (!response.ok) throw new Error(data.error || 'Chưa tạo được mã QR.');
+      setQr(data);
+      trackEvent('pro_qr_created', { plan: 'monthly_49000' });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Chưa tạo được mã QR. Bạn thử lại nhé.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/55 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="pro-upgrade-title">
+    <div className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-[28px] bg-card p-5 shadow-2xl sm:rounded-[28px] md:p-7">
+      <div className="flex items-start justify-between gap-4"><div><span className="inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.12em]"><Crown size={13} /> Thành viên Pro</span><h2 id="pro-upgrade-title" className="display-font mt-3 text-3xl font-bold">Nấu đủ cả tuần</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Chuyển khoản VietQR một lần, mở khóa ngay trên thiết bị này.</p></div><button onClick={onClose} className="rounded-full p-2 text-muted-foreground hover:bg-muted" aria-label="Đóng popup nâng cấp" data-testid="button-close-upgrade"><X size={19} /></button></div>
+      <div className="mt-5 rounded-2xl bg-secondary/70 p-4"><div className="flex items-center justify-between gap-3"><span className="text-sm font-bold">Pro hàng tháng</span><span className="display-font text-2xl font-bold text-primary">{PRO_PRICE.toLocaleString('vi-VN')}đ</span></div><div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2"><span>✓ Thực đơn đủ 7 ngày</span><span>✓ Hỏi AI không giới hạn</span><span>✓ Công thức và danh sách đi chợ</span><span>✓ Hỗ trợ gia đình nhiều thành viên</span></div></div>
+      {!qr ? <div className="mt-5"><label className="text-xs font-bold text-muted-foreground"><span className="inline-flex items-center gap-1.5"><Smartphone size={14} /> Số điện thoại người dùng</span><input value={phone} onChange={(event) => setPhone(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && createQr()} placeholder="Ví dụ: 0912 345 678" inputMode="tel" className="mt-1.5 w-full rounded-xl border bg-background px-3 py-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-pro-phone" /></label><p className="mt-2 text-xs leading-5 text-muted-foreground">Nội dung chuyển khoản sẽ tự điền: <strong>PRO [Số điện thoại]</strong>.</p><button onClick={createQr} disabled={loading} className="tactile mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-[0_4px_0_hsl(13_72%_43%)] disabled:opacity-60" data-testid="button-create-vietqr">{loading ? <><LoaderCircle size={17} className="animate-spin" /> Đang tạo mã QR...</> : <><QrCode size={17} /> Hiện mã QR chuyển khoản</>}</button></div> : <div className="mt-5 text-center"><div className="mx-auto w-fit rounded-2xl border bg-white p-3 shadow-sm"><img src={qr.qrUrl} alt={`Mã VietQR chuyển khoản ${PRO_PRICE.toLocaleString('vi-VN')} đồng`} className="h-64 w-64 object-contain" /></div><p className="mt-3 text-sm font-bold">Quét mã bằng ứng dụng ngân hàng</p><p className="mt-1 text-xs text-muted-foreground">Số tiền: <strong className="text-foreground">{qr.amount.toLocaleString('vi-VN')}đ</strong> · Nội dung: <strong className="text-primary">{qr.transferContent}</strong></p><button onClick={() => { setQr(null); }} className="mt-3 text-xs font-bold text-primary underline" data-testid="button-change-pro-phone">Đổi số điện thoại</button><button onClick={() => { trackEvent('pro_unlock_confirmed', { plan: 'monthly_49000' }); onUnlocked(); }} className="tactile mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(105_40%_45%)] px-4 py-3 text-sm font-bold text-white shadow-[0_4px_0_hsl(105_40%_35%)]" data-testid="button-confirm-pro"><Check size={17} /> Tôi đã chuyển khoản — mở khóa Pro</button><p className="mt-2 text-[11px] leading-5 text-muted-foreground">Sau khi chuyển khoản thành công, hãy bấm xác nhận để mở khóa trên thiết bị này.</p></div>}
+      {error && <p className="mt-3 rounded-xl bg-destructive/10 p-3 text-xs font-bold text-destructive" role="alert">{error}</p>}
+    </div>
   </div>;
 }
 
