@@ -270,7 +270,7 @@ function ProUpgradeModal({ open, onClose, onUnlocked }: { open: boolean; onClose
     <div className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-[28px] bg-card p-5 shadow-2xl sm:rounded-[28px] md:p-7">
       <div className="flex items-start justify-between gap-4"><div><span className="inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.12em]"><Crown size={13} /> Thành viên Pro</span><h2 id="pro-upgrade-title" className="display-font mt-3 text-3xl font-bold">Nấu đủ cả tuần</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Chuyển khoản VietQR một lần, mở khóa ngay trên thiết bị này.</p></div><button onClick={onClose} className="rounded-full p-2 text-muted-foreground hover:bg-muted" aria-label="Đóng popup nâng cấp" data-testid="button-close-upgrade"><X size={19} /></button></div>
       <div className="mt-5 rounded-2xl bg-secondary/70 p-4"><div className="flex items-center justify-between gap-3"><span className="text-sm font-bold">Pro hàng tháng</span><span className="display-font text-2xl font-bold text-primary">{PRO_PRICE.toLocaleString('vi-VN')}đ</span></div><div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2"><span>✓ Thực đơn đủ 7 ngày</span><span>✓ Hỏi AI không giới hạn</span><span>✓ Công thức và danh sách đi chợ</span><span>✓ Hỗ trợ gia đình nhiều thành viên</span></div></div>
-      {!qr ? <div className="mt-5"><label className="text-xs font-bold text-muted-foreground"><span className="inline-flex items-center gap-1.5"><Smartphone size={14} /> Số điện thoại người dùng</span><input value={phone} onChange={(event) => setPhone(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && createQr()} placeholder="Ví dụ: 0912 345 678" inputMode="tel" className="mt-1.5 w-full rounded-xl border bg-background px-3 py-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-pro-phone" /></label><p className="mt-2 text-xs leading-5 text-muted-foreground">Nội dung chuyển khoản sẽ tự điền: <strong>PRO [Số điện thoại]</strong>.</p><button onClick={createQr} disabled={loading} className="tactile mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-[0_4px_0_hsl(13_72%_43%)] disabled:opacity-60" data-testid="button-create-vietqr">{loading ? <><LoaderCircle size={17} className="animate-spin" /> Đang tạo mã QR...</> : <><QrCode size={17} /> Hiện mã QR chuyển khoản</>}</button></div> : <div className="mt-5 text-center"><div className="mx-auto w-fit rounded-2xl border bg-white p-3 shadow-sm"><img src={qr.qrUrl} alt={`Mã VietQR chuyển khoản ${PRO_PRICE.toLocaleString('vi-VN')} đồng`} className="h-64 w-64 object-contain" /></div><p className="mt-3 text-sm font-bold">Quét mã bằng ứng dụng ngân hàng</p><p className="mt-1 text-xs text-muted-foreground">Số tiền: <strong className="text-foreground">{qr.amount.toLocaleString('vi-VN')}đ</strong> · Nội dung: <strong className="text-primary">{qr.transferContent}</strong></p><button onClick={() => { setQr(null); }} className="mt-3 text-xs font-bold text-primary underline" data-testid="button-change-pro-phone">Đổi số điện thoại</button><button onClick={() => { trackEvent('pro_unlock_confirmed', { plan: 'monthly_49000' }); onUnlocked(); }} className="tactile mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(105_40%_45%)] px-4 py-3 text-sm font-bold text-white shadow-[0_4px_0_hsl(105_40%_35%)]" data-testid="button-confirm-pro"><Check size={17} /> Tôi đã chuyển khoản — mở khóa Pro</button><p className="mt-2 text-[11px] leading-5 text-muted-foreground">Sau khi chuyển khoản thành công, hãy bấm xác nhận để mở khóa trên thiết bị này.</p></div>}
+      {!qr ? <div className="mt-5"><label className="text-xs font-bold text-muted-foreground"><span className="inline-flex items-center gap-1.5"><Smartphone size={14} /> Số điện thoại người dùng</span><input value={phone} onChange={(event) => setPhone(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && createQr()} placeholder="Ví dụ: 0912 345 678" inputMode="tel" className="mt-1.5 w-full rounded-xl border bg-background px-3 py-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-pro-phone" /></label><p className="mt-2 text-xs leading-5 text-muted-foreground">Nội dung chuyển khoản sẽ tự điền: <strong>PRO [Số điện thoại]</strong>.</p><button onClick={createQr} disabled={loading} className="tactile mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-[0_4px_0_hsl(13_72%_43%)] disabled:opacity-60" data-testid="button-create-vietqr">{loading ? <><LoaderCircle size={17} className="animate-spin" /> Đang tạo mã QR...</> : <><QrCode size={17} /> Hiện mã QR chuyển khoản</>}</button></div> : <div className="mt-5 text-center"><div className="mx-auto w-fit rounded-2xl border bg-white p-3 shadow-sm"><img src={qr.qrUrl} alt={`Mã VietQR chuyển khoản ${PRO_PRICE.toLocaleString('vi-VN')} đồng`} className="h-64 w-64 object-contain" /></div><p className="mt-3 text-sm font-bold">Quét mã bằng ứng dụng ngân hàng</p><p className="mt-1 text-xs text-muted-foreground">Số tiền: <strong className="text-foreground">{qr.amount.toLocaleString('vi-VN')}đ</strong> · Nội dung: <strong className="text-primary">{qr.transferContent}</strong></p><button onClick={() => { setQr(null); }} className="mt-3 text-xs font-bold text-primary underline" data-testid="button-change-pro-phone">Đổi số điện thoại</button><button onClick={onUnlocked} className="tactile mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(105_40%_45%)] px-4 py-3 text-sm font-bold text-white shadow-[0_4px_0_hsl(105_40%_35%)]" data-testid="button-confirm-pro"><Check size={17} /> Tôi đã chuyển khoản — mở khóa Pro</button><p className="mt-2 text-[11px] leading-5 text-muted-foreground">Sau khi chuyển khoản thành công, hãy bấm xác nhận để mở khóa trên thiết bị này.</p></div>}
       {error && <p className="mt-3 rounded-xl bg-destructive/10 p-3 text-xs font-bold text-destructive" role="alert">{error}</p>}
     </div>
   </div>;
@@ -396,7 +396,7 @@ function AskAiPage({ prefs, plan }: { prefs: Preferences; plan: DayPlan[] }) { c
 type FridgeAiResult = { ingredients: { name: string; confidence: number }[]; dishes: { name: string; why: string; ingredients: string[]; steps: string[]; nutrition: { calories: number; protein: number; fat: number } }[]; safetyNotes: string[] };
 type RecipeAiResult = { dishName: string; servings: number; ingredients: { name: string; amount: string }[]; steps: string[]; nutrition: { calories: number; protein: number; fat: number }; safetyNotes: string[] };
 
-function AskAiPageV2({ prefs }: { prefs: Preferences }) {
+function AskAiPageV2({ prefs, isPro, onUpgrade }: { prefs: Preferences; isPro: boolean; onUpgrade: () => void }) {
   const [mode, setMode] = useState<'fridge' | 'recipe'>('fridge');
   const [imageData, setImageData] = useState('');
   const [imageMime, setImageMime] = useState('image/jpeg');
@@ -406,8 +406,27 @@ function AskAiPageV2({ prefs }: { prefs: Preferences }) {
   const [recipeResult, setRecipeResult] = useState<RecipeAiResult | null>(null);
   const [loading, setLoading] = useState<'fridge' | 'recipe' | null>(null);
   const [error, setError] = useState('');
+  const [aiUsage, setAiUsage] = useState<AiUsage>(readAiUsage);
   const safety = { kids: prefs.kids, allergies: prefs.allergies, allergyOther: prefs.allergyOther };
   const allergyText = [...prefs.allergies, ...prefs.allergyOther.split(',').map((item) => item.trim()).filter(Boolean)];
+  const aiRemaining = isPro ? null : Math.max(0, FREE_AI_LIMIT - aiUsage.count);
+  const hasAiAccess = isPro || aiUsage.count < FREE_AI_LIMIT;
+
+  const ensureAiAccess = (requestMode: 'fridge' | 'recipe') => {
+    if (hasAiAccess) return true;
+    trackEvent('ai_limit_reached', { mode: requestMode, limit: FREE_AI_LIMIT });
+    onUpgrade();
+    return false;
+  };
+
+  const consumeAiUse = (requestMode: 'fridge' | 'recipe') => {
+    if (!isPro) {
+      const next = { month: currentMonth(), count: aiUsage.count + 1 };
+      window.localStorage.setItem(AI_USAGE_STORAGE_KEY, JSON.stringify(next));
+      setAiUsage(next);
+    }
+    trackEvent('ai_request_succeeded', { mode: requestMode, membership: isPro ? 'pro' : 'free' });
+  };
 
   const onImageSelected = async (file?: File) => {
     if (!file) return;
@@ -433,6 +452,7 @@ function AskAiPageV2({ prefs }: { prefs: Preferences }) {
   };
 
   const analyzeFridge = async () => {
+    if (!ensureAiAccess('fridge')) return;
     if (!imageData) {
       setError('Hãy chụp hoặc tải ảnh tủ lạnh trước nhé.');
       return;
@@ -444,14 +464,17 @@ function AskAiPageV2({ prefs }: { prefs: Preferences }) {
       const data = await response.json() as FridgeAiResult & { error?: string };
       if (!response.ok) throw new Error(data.error || 'AI chưa trả lời được.');
       setFridgeResult(data);
+      consumeAiUse('fridge');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'AI chưa trả lời được. Bạn hãy thử lại.');
+      trackEvent('ai_request_failed', { mode: 'fridge', membership: isPro ? 'pro' : 'free' });
     } finally {
       setLoading(null);
     }
   };
 
   const lookupRecipe = async () => {
+    if (!ensureAiAccess('recipe')) return;
     const dishName = recipeName.trim();
     if (!dishName) {
       setError('Hãy nhập tên món bạn muốn tra.');
@@ -464,8 +487,10 @@ function AskAiPageV2({ prefs }: { prefs: Preferences }) {
       const data = await response.json() as RecipeAiResult & { error?: string };
       if (!response.ok) throw new Error(data.error || 'AI chưa trả lời được.');
       setRecipeResult(data);
+      consumeAiUse('recipe');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'AI chưa trả lời được. Bạn hãy thử lại.');
+      trackEvent('ai_request_failed', { mode: 'recipe', membership: isPro ? 'pro' : 'free' });
     } finally {
       setLoading(null);
     }
@@ -476,6 +501,7 @@ function AskAiPageV2({ prefs }: { prefs: Preferences }) {
       <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.17em] text-accent">Trợ lý bếp Gemini</p><h1 className="display-font mt-2 text-4xl font-bold tracking-tight">Hỏi gì cũng được.</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-background/70">Đưa ảnh tủ lạnh hoặc tên món ăn. AI sẽ gợi ý cách nấu nhanh, nhạt và hợp với nhà mình.</p></div><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground"><Sparkles size={22} /></span></div>
       <div className="mt-6 grid gap-2 sm:grid-cols-2"><button onClick={() => setMode('fridge')} className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${mode === 'fridge' ? 'border-accent bg-accent text-foreground' : 'border-background/15 bg-background/10 text-background'}`} data-testid="button-ai-fridge-mode"><Camera size={19} /><span><span className="block text-sm font-bold">📷 Nhìn ảnh tủ lạnh</span><span className="mt-0.5 block text-[11px] opacity-75">Nhận diện nguyên liệu, gợi ý 3 món</span></span></button><button onClick={() => setMode('recipe')} className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${mode === 'recipe' ? 'border-accent bg-accent text-foreground' : 'border-background/15 bg-background/10 text-background'}`} data-testid="button-ai-recipe-mode"><BookOpen size={19} /><span><span className="block text-sm font-bold">📖 Tra cách nấu</span><span className="mt-0.5 block text-[11px] opacity-75">Định lượng 1 khẩu phần và dinh dưỡng</span></span></button></div>
     </section>
+    <div className={`flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between ${isPro ? 'border-accent/40 bg-accent/15' : aiRemaining === 0 ? 'border-primary/30 bg-primary/5' : 'bg-card'}`}><div className="flex items-center gap-3"><span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${isPro ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground'}`}>{isPro ? <Crown size={18} /> : <Sparkles size={18} />}</span><div><p className="text-sm font-bold">{isPro ? 'Hỏi AI không giới hạn' : `Còn ${aiRemaining} / ${FREE_AI_LIMIT} lượt AI miễn phí tháng này`}</p><p className="mt-0.5 text-xs text-muted-foreground">{isPro ? 'Đặc quyền thành viên Pro đang hoạt động.' : 'Lượt dùng được đặt lại vào đầu tháng.'}</p></div></div>{!isPro && aiRemaining === 0 && <button onClick={onUpgrade} className="tactile inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground" data-testid="button-ai-limit-upgrade"><Crown size={14} /> Nâng cấp Pro</button>}</div>
     {allergyText.length > 0 && <div className="flex items-start gap-3 rounded-2xl border border-[hsl(13_80%_56%/.3)] bg-[hsl(12_100%_93%)] p-4 text-sm"><AlertCircle size={18} className="mt-0.5 shrink-0 text-primary" /><p><span className="font-bold">AI sẽ tự né:</span> {allergyText.join(', ')}.</p></div>}
     {prefs.kids > 0 && <div className="flex items-start gap-3 rounded-2xl border border-[hsl(105_40%_45%/.3)] bg-secondary p-4 text-sm"><Utensils size={18} className="mt-0.5 shrink-0 text-[hsl(105_33%_30%)]" /><p><span className="font-bold">Quy tắc an toàn đang bật:</span> không gợi ý mật ong cho gia đình có trẻ nhỏ; luôn ưu tiên vị nhạt và ít dầu mỡ.</p></div>}
     {error && <div className="flex items-start gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive" role="alert"><AlertCircle size={18} className="mt-0.5 shrink-0" /><p>{error}</p><button onClick={() => setError('')} className="ml-auto rounded-full p-1" aria-label="Đóng thông báo lỗi"><X size={15} /></button></div>}
