@@ -12,9 +12,11 @@ const queryClient = new QueryClient();
 type Budget = 'tietkiem' | 'vua' | 'thoaimai';
 type VegMode = '0' | '1' | '2';
 type HealingMode = 'stress' | 'hormone' | 'realfood';
-type Preferences = { kids: number; elderly: number; adults: number; maxTime: number; budget: Budget; targetBudget: number; veg: VegMode; healingModes: HealingMode[]; allergies: string[]; allergyOther: string; favoriteIngredients: string; };
+type SpecialNutrition = 'none' | 'stress' | 'hormone' | 'realfood' | 'lowcarb' | 'who';
+type Preferences = { kids: number; elderly: number; adults: number; maxTime: number; budget: Budget; targetBudget: number; veg: VegMode; healingModes: HealingMode[]; specialNutrition: SpecialNutrition; selectedMeals: { breakfast: boolean; lunch: boolean; dinner: boolean }; dishesPerMainMeal: 1 | 2 | 3; allergies: string[]; allergyOther: string; favoriteIngredients: string; };
 type MealSet = { dam: Dish; rau: Dish; canh: Dish };
 type DayPlan = { day: string; breakfast: Dish; lunch: MealSet; dinner: MealSet };
+type DishSlot = 'breakfast' | 'lunch.dam' | 'lunch.rau' | 'lunch.canh' | 'dinner.dam' | 'dinner.rau' | 'dinner.canh';
 type Aggregate = Record<string, { qty: number; unit?: string }>;
 type ProQr = { qrUrl: string; transferContent: string; amount: number };
 type AiUsage = { month: string; count: number };
@@ -23,8 +25,8 @@ type InstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 };
 
-const initialPreferences: Preferences = { kids: 1, elderly: 0, adults: 2, maxTime: 30, budget: 'vua', targetBudget: 1200000, veg: '0', healingModes: [], allergies: [], allergyOther: '', favoriteIngredients: '' };
-const allergyOptions = [{ value: 'Tôm tươi', label: 'Hải sản' }, { value: 'Trứng gà', label: 'Trứng' }, { value: 'Sữa tươi không đường', label: 'Sữa' }, { value: 'Đậu phộng', label: 'Đậu phộng / hạt' }];
+const initialPreferences: Preferences = { kids: 1, elderly: 0, adults: 2, maxTime: 30, budget: 'vua', targetBudget: 1200000, veg: '0', healingModes: [], specialNutrition: 'none', selectedMeals: { breakfast: true, lunch: true, dinner: true }, dishesPerMainMeal: 3, allergies: [], allergyOther: '', favoriteIngredients: '' };
+const allergyOptions = [{ value: 'Tôm', label: 'Tôm' }, { value: 'Cua/Hải sản', label: 'Cua/Hải sản' }, { value: 'Trứng', label: 'Trứng' }, { value: 'Đậu nành', label: 'Đậu nành' }, { value: 'Thịt bò', label: 'Thịt bò' }, { value: 'Măng', label: 'Măng' }, { value: 'Nấm', label: 'Nấm' }];
 const budgetLabels: Record<Budget, string> = { tietkiem: 'Tiết kiệm', vua: 'Vừa phải', thoaimai: 'Thoải mái' };
 const FREE_DAY_LIMIT = 3;
 const FREE_AI_LIMIT = 3;
@@ -67,7 +69,10 @@ function orderedDayNames() {
 function readStoredPreferences(): Preferences {
   try {
     const saved = JSON.parse(window.localStorage.getItem(PREFS_STORAGE_KEY) || 'null') as Partial<Preferences> | null;
-    return saved ? { ...initialPreferences, ...saved } : initialPreferences;
+    if (!saved) return initialPreferences;
+    const legacyModes = saved.healingModes || [];
+    const specialNutrition = saved.specialNutrition || (legacyModes[0] as SpecialNutrition) || 'none';
+    return { ...initialPreferences, ...saved, specialNutrition, selectedMeals: { ...initialPreferences.selectedMeals, ...(saved.selectedMeals || {}) }, dishesPerMainMeal: ([1, 2, 3] as number[]).includes(saved.dishesPerMainMeal as number) ? saved.dishesPerMainMeal as 1 | 2 | 3 : 3 };
   } catch {
     return initialPreferences;
   }
@@ -125,33 +130,49 @@ const HEALING_MODE_TERMS: Record<Exclude<HealingMode, 'realfood'>, string[]> = {
 function healingScore(dish: Dish, p: Preferences) {
   const text = normalize(`${dish.name} ${(dish.tags || []).join(' ')} ${dish.ing.map((item) => item[0]).join(' ')}`);
   let score = 0;
-  if (p.healingModes.includes('stress')) score += HEALING_MODE_TERMS.stress.reduce((sum, term) => sum + (text.includes(term) ? 6 : 0), 0);
-  if (p.healingModes.includes('hormone')) score += HEALING_MODE_TERMS.hormone.reduce((sum, term) => sum + (text.includes(term) ? 6 : 0), 0);
+  if (p.healingModes.includes('stress') || p.specialNutrition === 'stress') score += HEALING_MODE_TERMS.stress.reduce((sum, term) => sum + (text.includes(term) ? 6 : 0), 0);
+  if (p.healingModes.includes('hormone') || p.specialNutrition === 'hormone') score += HEALING_MODE_TERMS.hormone.reduce((sum, term) => sum + (text.includes(term) ? 6 : 0), 0);
   if (p.healingModes.includes('realfood')) {
     if (!dish.method || ['boilsteam', 'porridge', 'soak', 'nocook', 'oatsoup', 'phobun'].includes(dish.method)) score += 8;
     if (dish.veg) score += 2;
   }
+  if (p.specialNutrition === 'lowcarb') {
+    if (dish.type === 'dam' || dish.proteinGroup || dish.veg) score += 8;
+    if (['Gạo tẻ', 'Gạo nếp', 'Bánh mì', 'Bánh phở', 'Bún gạo'].some((name) => dish.ing.some(([ingredient]) => ingredient === name))) score -= 10;
+  }
+  if (p.specialNutrition === 'who') {
+    score += Math.min(8, (dish.tags || []).length * 2);
+    if (dish.veg || dish.proteinGroup === 'fish' || dish.proteinGroup === 'plant' || dish.proteinGroup === 'soy') score += 4;
+  }
   return score;
 }
+function allergyTerms(p: Preferences) {
+  const aliases: Record<string, string[]> = { 'tom': ['tom', 'hai san', 'muc'], 'cua/hai san': ['cua', 'tom', 'muc', 'hai san'], 'trung': ['trung'], 'dau nanh': ['dau nanh', 'dau hu'], 'thit bo': ['thit bo'], 'mang': ['mang'], 'nam': ['nam'] };
+  return [...p.allergies, ...p.allergyOther.split(',').map((x) => x.trim()).filter(Boolean)].flatMap((x) => aliases[normalize(x)] || [normalize(x)]);
+}
+function dishAllowed(dish: Dish, p: Preferences) {
+  const blocked = allergyTerms(p);
+  const text = normalize(`${dish.name} ${(dish.allergens || []).join(' ')} ${dish.ing.map((x) => x[0]).join(' ')}`);
+  return !blocked.some((term) => text.includes(term));
+}
 function poolAllowed(pool: Dish[], p: Preferences) {
-  const blocked = [...p.allergies, ...p.allergyOther.split(',').map((x) => x.trim()).filter(Boolean)].map(normalize);
   const favorites = p.favoriteIngredients.split(',').map((x) => normalize(x.trim())).filter(Boolean);
   const maxCost = p.budget === 'tietkiem' ? 1 : p.budget === 'thoaimai' ? 3 : 2;
   const result = pool.filter((dish) => {
     const text = normalize(`${dish.name} ${dish.ing.map((x) => x[0]).join(' ')}`);
-    if (blocked.some((term) => text.includes(term))) return false;
+    if (!dishAllowed(dish, p)) return false;
     if (dish.time > p.maxTime && dish !== BREAKFAST[0]) return false;
     if ((dish.costTier === 'cao' ? 3 : dish.costTier === 'vua' ? 2 : 1) > maxCost) return false;
     if (p.veg === '2' && !dish.veg) return false;
-    if (p.healingModes.includes('realfood') && (REAL_FOOD_BLOCKED_METHODS.has(dish.method || '') || dish.ing.some(([name]) => REAL_FOOD_BLOCKED_INGREDIENTS.includes(name)))) return false;
+    if ((p.healingModes.includes('realfood') || p.specialNutrition === 'realfood') && (REAL_FOOD_BLOCKED_METHODS.has(dish.method || '') || dish.ing.some(([name]) => REAL_FOOD_BLOCKED_INGREDIENTS.includes(name)))) return false;
     return true;
   });
-  if (!result.length) return pool;
+  if (!result.length) return [];
   const sorted = result.sort((a, b) => {
     const score = (dish: Dish) => healingScore(dish, p) + favorites.reduce((sum, term) => sum + (normalize(`${dish.name} ${dish.ing.map((x) => x[0]).join(' ')}`).includes(term) ? 4 : 0), 0);
     return score(b) - score(a);
   });
-  if (p.healingModes.length === 0) return sorted;
+  if (p.healingModes.length === 0 && p.specialNutrition === 'none') return sorted;
   const preferred = sorted.filter((dish) => healingScore(dish, p) > 0);
   return preferred.length >= 3 ? preferred : sorted.slice(0, Math.max(3, Math.ceil(sorted.length / 2)));
 }
@@ -163,7 +184,7 @@ function dishCost(dish: Dish, units: number) {
   return dish.ing.reduce((sum, [name, qty]) => sum + priceFor(name, qty * units), 0);
 }
 function aggregateCost(plan: DayPlan[], units: number, p: Preferences) {
-  const agg = aggregate(plan, units);
+  const agg = aggregate(plan, units, p);
   let sum = 0;
   for (const [name, item] of Object.entries(agg)) sum += priceFor(name, item.qty);
   return sum + PANTRY_COST[p.budget];
@@ -174,14 +195,29 @@ function generatePlan(p: Preferences, seed = 0): DayPlan[] {
   const rau = poolAllowed(RAU, p);
   const canh = poolAllowed(CANH, p);
   
+  const usedMain = new Set<string>();
+  let previousProteinGroup = '';
+  const chooseMain = (index: number, avoid: string[] = []) => {
+    const unused = dam.filter((dish) => !usedMain.has(dish.name) && !avoid.includes(dish.name));
+    const rotated = unused.filter((dish) => !previousProteinGroup || dish.proteinGroup !== previousProteinGroup);
+    const candidates = rotated.length ? rotated : unused;
+    const chosen = candidates[index % Math.max(1, candidates.length)] || dam[index % dam.length];
+    usedMain.add(chosen.name);
+    previousProteinGroup = chosen.proteinGroup || '';
+    return chosen;
+  };
+  const pickSide = (pool: Dish[], index: number, avoidNames: string[], avoidMethods: string[]) => {
+    const diverse = pool.filter((dish) => !avoidNames.includes(dish.name) && !avoidMethods.includes(dish.preparation || dish.method || ''));
+    return pick(diverse.length ? diverse : pool, index, avoidNames);
+  };
   const initialPlan = orderedDayNames().map((day, index) => {
     const b = pick(breakfast, index + seed);
-    const lunchDam = pick(dam, index * 2 + seed);
-    const dinnerDam = pick(dam, index * 2 + 1 + seed, [lunchDam.name]);
-    const lunchRau = pick(rau, index + seed);
-    const dinnerRau = pick(rau, index + 1 + seed, [lunchRau.name]);
-    const lunchCanh = pick(canh, index + seed);
-    const dinnerCanh = pick(canh, index + 1 + seed, [lunchCanh.name]);
+    const lunchDam = chooseMain(index * 2 + seed);
+    const dinnerDam = chooseMain(index * 2 + 1 + seed, [lunchDam.name]);
+    const lunchRau = pickSide(rau, index + seed, [], [lunchDam.preparation || lunchDam.method || '']);
+    const dinnerRau = pickSide(rau, index + 1 + seed, [lunchRau.name], [dinnerDam.preparation || dinnerDam.method || '']);
+    const lunchCanh = pickSide(canh, index + seed, [], [lunchDam.preparation || lunchDam.method || '', lunchRau.preparation || lunchRau.method || '']);
+    const dinnerCanh = pickSide(canh, index + 1 + seed, [lunchCanh.name], [dinnerDam.preparation || dinnerDam.method || '', dinnerRau.preparation || dinnerRau.method || '']);
     return { day, breakfast: b, lunch: { dam: lunchDam, rau: lunchRau, canh: lunchCanh }, dinner: { dam: dinnerDam, rau: dinnerRau, canh: dinnerCanh } };
   });
 
@@ -189,6 +225,19 @@ function generatePlan(p: Preferences, seed = 0): DayPlan[] {
   const units = unitsOf(p);
   let currentCost = aggregateCost(initialPlan, units, p);
   let plan = initialPlan.map(day => ({ ...day, lunch: { ...day.lunch }, dinner: { ...day.dinner } }));
+  const countUsage = (dishName: string) => {
+    let count = 0;
+    plan.forEach((day) => {
+      if (day.breakfast.name === dishName) count++;
+      if (day.lunch.dam.name === dishName) count++;
+      if (day.lunch.rau.name === dishName) count++;
+      if (day.lunch.canh.name === dishName) count++;
+      if (day.dinner.dam.name === dishName) count++;
+      if (day.dinner.rau.name === dishName) count++;
+      if (day.dinner.canh.name === dishName) count++;
+    });
+    return count;
+  };
   
   const pools = { breakfast, dam, rau, canh };
   const nutritionTarget = {
@@ -196,7 +245,7 @@ function generatePlan(p: Preferences, seed = 0): DayPlan[] {
     protein: (p.kids * DAILY_TARGET.kid.protein + p.elderly * DAILY_TARGET.elderly.protein + p.adults * DAILY_TARGET.adult.protein) * 7,
   };
   const nutritionTotals = () => plan.reduce((sum, day) => {
-    const value = mealCalories(day);
+    const value = mealCalories(day, p);
     return { cal: sum.cal + value.cal * units, protein: sum.protein + value.protein * units };
   }, { cal: 0, protein: 0 });
   let currentNutrition = nutritionTotals();
@@ -219,6 +268,7 @@ function generatePlan(p: Preferences, seed = 0): DayPlan[] {
         const old = nutrition(slot.dish);
         for (const candidate of slot.pool) {
           if (candidate.name === slot.dish.name) continue;
+          if ((slot.key.endsWith('.dam') && countUsage(candidate.name) > 0) || countUsage(candidate.name) >= 2) continue;
           const next = nutrition(candidate);
           const calGain = (next.cal - old.cal) * units;
           const proteinGain = (next.protein - old.protein) * units;
@@ -239,20 +289,6 @@ function generatePlan(p: Preferences, seed = 0): DayPlan[] {
     currentNutrition = nutritionTotals();
     currentCost = aggregateCost(plan, units, p);
   }
-  const countUsage = (dishName: string) => {
-    let c = 0;
-    plan.forEach((d) => {
-      if (d.breakfast.name === dishName) c++;
-      if (d.lunch.dam.name === dishName) c++;
-      if (d.lunch.rau.name === dishName) c++;
-      if (d.lunch.canh.name === dishName) c++;
-      if (d.dinner.dam.name === dishName) c++;
-      if (d.dinner.rau.name === dishName) c++;
-      if (d.dinner.canh.name === dishName) c++;
-    });
-    return c;
-  };
-
   let iterations = 0;
   while (currentCost > target && iterations < 50) {
     iterations++;
@@ -274,6 +310,7 @@ function generatePlan(p: Preferences, seed = 0): DayPlan[] {
       for (const mt of mealTypes) {
         const currentDishCost = dishCost(mt.dish, units);
         for (const candidate of mt.pool) {
+          if ((mt.key.endsWith('.dam') && countUsage(candidate.name) > 0) || countUsage(candidate.name) >= 2) continue;
           const candidateCost = dishCost(candidate, units);
           const reduction = currentDishCost - candidateCost;
           if (reduction > 0) {
@@ -326,6 +363,7 @@ function generatePlan(p: Preferences, seed = 0): DayPlan[] {
         const currentDishCost = dishCost(mt.dish, units);
         const currentPro = nutrition(mt.dish).protein;
         for (const candidate of mt.pool) {
+          if ((mt.key.endsWith('.dam') && countUsage(candidate.name) > 0) || countUsage(candidate.name) >= 2) continue;
           const candidateCost = dishCost(candidate, units);
           const costIncrease = candidateCost - currentDishCost;
           
@@ -354,14 +392,35 @@ function generatePlan(p: Preferences, seed = 0): DayPlan[] {
     currentCost += bestSwap.costIncrease;
   }
 
+  const finalUsedMain = new Set<string>();
+  let finalPreviousProtein = '';
+  plan.forEach((day) => {
+    (['lunch', 'dinner'] as const).forEach((meal) => {
+      const current = day[meal].dam;
+      const repeatsName = finalUsedMain.has(current.name);
+      const repeatsProtein = Boolean(finalPreviousProtein && current.proteinGroup === finalPreviousProtein);
+      if (repeatsName || repeatsProtein) {
+        const sameTier = dam.filter((candidate) => !finalUsedMain.has(candidate.name) && candidate.proteinGroup !== finalPreviousProtein && candidate.costTier === current.costTier);
+        const anyTier = dam.filter((candidate) => !finalUsedMain.has(candidate.name) && candidate.proteinGroup !== finalPreviousProtein);
+        const replacement = (sameTier.length ? sameTier : anyTier)[(seed + finalUsedMain.size) % Math.max(1, (sameTier.length ? sameTier : anyTier).length)];
+        if (replacement) day[meal].dam = replacement;
+      }
+      finalUsedMain.add(day[meal].dam.name);
+      finalPreviousProtein = day[meal].dam.proteinGroup || '';
+    });
+  });
   return plan;
 }
-function aggregate(plan: DayPlan[], units: number): Aggregate {
+function aggregate(plan: DayPlan[], units: number, p: Preferences = initialPreferences): Aggregate {
   const result: Aggregate = {};
   const add = (name: string, qty: number, unit?: string) => { result[name] = result[name] ? { ...result[name], qty: result[name].qty + qty } : { qty, unit }; };
   plan.forEach((day) => {
-    [day.breakfast, day.lunch.dam, day.lunch.rau, day.lunch.canh, day.dinner.dam, day.dinner.rau, day.dinner.canh].forEach((dish) => dish.ing.forEach(([name, qty, unit]) => add(name, qty * units, unit)));
-    add('Gạo tẻ', RICE_PER_UNIT * units * 2);
+    const meals: Dish[] = [];
+    if (p.selectedMeals.breakfast) meals.push(day.breakfast);
+    if (p.selectedMeals.lunch) meals.push(day.lunch.dam, ...(p.dishesPerMainMeal >= 2 ? [day.lunch.rau] : []), ...(p.dishesPerMainMeal >= 3 ? [day.lunch.canh] : []));
+    if (p.selectedMeals.dinner) meals.push(day.dinner.dam, ...(p.dishesPerMainMeal >= 2 ? [day.dinner.rau] : []), ...(p.dishesPerMainMeal >= 3 ? [day.dinner.canh] : []));
+    meals.forEach((dish) => dish.ing.forEach(([name, qty, unit]) => add(name, qty * units, unit)));
+    add('Gạo tẻ', RICE_PER_UNIT * units * (Number(p.selectedMeals.lunch) + Number(p.selectedMeals.dinner)));
   });
   return result;
 }
@@ -370,10 +429,13 @@ function displayQuantity(value: { qty: number; unit?: string }) {
   if (value.unit) return `${Math.ceil(value.qty)} ${value.unit}`;
   return value.qty >= 1000 ? `${(value.qty / 1000).toFixed(1).replace('.0', '')} kg` : `${Math.ceil(value.qty / 5) * 5} g`;
 }
-function mealCalories(day: DayPlan) {
+function mealCalories(day: DayPlan, p: Preferences = initialPreferences) {
   const rice = { cal: 365 * RICE_PER_UNIT / 100, protein: 7 * RICE_PER_UNIT / 100 };
-  const meals = [day.breakfast, day.lunch.dam, day.lunch.rau, day.lunch.canh, day.dinner.dam, day.dinner.rau, day.dinner.canh].map(nutrition);
-  return meals.reduce((sum, item) => ({ cal: sum.cal + item.cal, protein: sum.protein + item.protein }), { cal: rice.cal * 2 + 120, protein: rice.protein * 2 });
+  const meals: Dish[] = [];
+  if (p.selectedMeals.breakfast) meals.push(day.breakfast);
+  if (p.selectedMeals.lunch) meals.push(day.lunch.dam, ...(p.dishesPerMainMeal >= 2 ? [day.lunch.rau] : []), ...(p.dishesPerMainMeal >= 3 ? [day.lunch.canh] : []));
+  if (p.selectedMeals.dinner) meals.push(day.dinner.dam, ...(p.dishesPerMainMeal >= 2 ? [day.dinner.rau] : []), ...(p.dishesPerMainMeal >= 3 ? [day.dinner.canh] : []));
+  return meals.map(nutrition).reduce((sum, item) => ({ cal: sum.cal + item.cal, protein: sum.protein + item.protein }), { cal: rice.cal * (p.selectedMeals.lunch || p.selectedMeals.dinner ? 1 : 0) * 2 + (p.selectedMeals.breakfast ? 120 : 0), protein: rice.protein * (p.selectedMeals.lunch || p.selectedMeals.dinner ? 2 : 0) });
 }
 function getCategory(name: string) {
   if (['Tôm','Cá','Mực','Thịt','Trứng','Đậu hũ','Gan','Sườn','Chả'].some((term) => name.includes(term))) return 'Thịt, cá & đạm';
@@ -514,17 +576,18 @@ function Shell() {
   const [quantityOverrides, setQuantityOverrides] = useState<Record<string, number>>({});
   const [favoriteDishes, setFavoriteDishes] = useState<Set<string>>(new Set());
   const [budgetNotice, setBudgetNotice] = useState('');
+  const [swapNotice, setSwapNotice] = useState('');
   const [expandedDay, setExpandedDay] = useState(0);
   const [activeMeal, setActiveMeal] = useState<'all' | 'breakfast' | 'lunch' | 'dinner'>('all');
   const units = unitsOf(prefs);
   const accessiblePlan = isPro ? plan : plan.slice(0, FREE_DAY_LIMIT);
   const shopping = useMemo(() => {
-    const base = aggregate(accessiblePlan, units);
+    const base = aggregate(accessiblePlan, units, prefs);
     Object.entries(quantityOverrides).forEach(([name, qty]) => {
       if (base[name] && qty >= 0) base[name] = { ...base[name], qty };
     });
     return base;
-  }, [accessiblePlan, units, quantityOverrides]);
+  }, [accessiblePlan, units, quantityOverrides, prefs]);
   const totalCost = useMemo(() => Object.entries(shopping).reduce((sum, [name, item]) => bought.has(name) ? sum : sum + priceFor(name, item.qty), 0) + PANTRY_COST[prefs.budget], [shopping, bought, prefs.budget]);
   useEffect(() => {
     window.localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(prefs));
@@ -554,6 +617,33 @@ function Shell() {
   const regenerate = () => { const nextSeed = seed + 1; setSeed(nextSeed); setPlan(generatePlan(prefs, nextSeed)); setBought(new Set()); setQuantityOverrides({}); trackEvent('menu_regenerated', { membership: isPro ? 'pro' : 'free' }); };
   const updatePrefs = (next: Partial<Preferences>) => setPrefs((current) => ({ ...current, ...next }));
   const saveSettings = () => { setPlan(generatePlan(prefs, seed + 1)); setSeed(seed + 1); setSettingsOpen(false); setBought(new Set()); setQuantityOverrides({}); setBudgetNotice(''); };
+  const swapDish = useCallback((dayIndex: number, slot: DishSlot) => {
+    const [meal, field] = slot.split('.');
+    const current = meal === 'breakfast' ? plan[dayIndex].breakfast : plan[dayIndex][meal as 'lunch' | 'dinner'][field as keyof MealSet];
+    const pool = meal === 'breakfast' ? BREAKFAST : field === 'rau' ? RAU : field === 'canh' ? CANH : DAM;
+    const used = new Set<string>();
+    plan.forEach((day, index) => {
+      const entries = [day.breakfast, day.lunch.dam, day.lunch.rau, day.lunch.canh, day.dinner.dam, day.dinner.rau, day.dinner.canh];
+      entries.forEach((dish) => {
+        if (index !== dayIndex || dish.name !== current.name) used.add(dish.name);
+      });
+    });
+    const costRank = (dish: Dish) => dish.costTier === 'cao' ? 3 : dish.costTier === 'vua' ? 2 : 1;
+    const allowed = poolAllowed(pool, prefs).filter((dish) => dish.name !== current.name && !used.has(dish.name));
+    const samePrice = allowed.filter((dish) => Math.abs(costRank(dish) - costRank(current)) <= 1);
+    const candidates = samePrice.length ? samePrice : allowed;
+    if (!candidates.length) {
+      setSwapNotice(`Chưa tìm được món thay thế an toàn cho “${current.name}”. Hãy nới bộ lọc hoặc đổi mức ngân sách.`);
+      return;
+    }
+    const candidate = candidates[(seed + dayIndex + current.name.length) % candidates.length];
+    const next = plan.map((day) => ({ ...day, lunch: { ...day.lunch }, dinner: { ...day.dinner } }));
+    if (meal === 'breakfast') next[dayIndex].breakfast = candidate;
+    else next[dayIndex][meal as 'lunch' | 'dinner'][field as keyof MealSet] = candidate;
+    setPlan(next);
+    setSwapNotice(`Đã đổi “${current.name}” thành “${candidate.name}”. Các món khác được giữ nguyên.`);
+    trackEvent('single_dish_swapped', { slot, from: current.name, to: candidate.name });
+  }, [plan, prefs, seed]);
   const unlockPro = () => {
     window.localStorage.setItem(PRO_STORAGE_KEY, 'true');
     setIsPro(true);
@@ -567,7 +657,7 @@ function Shell() {
   
   const forceBudget = useCallback(() => {
     let newPlan = plan.map(d => ({...d, lunch: {...d.lunch}, dinner: {...d.dinner}}));
-    let currentCost = Object.entries(aggregate(newPlan, units)).reduce((sum, [name, item]) => bought.has(name) ? sum : sum + priceFor(name, item.qty), 0) + PANTRY_COST[prefs.budget];
+    let currentCost = Object.entries(aggregate(newPlan, units, prefs)).reduce((sum, [name, item]) => bought.has(name) ? sum : sum + priceFor(name, item.qty), 0) + PANTRY_COST[prefs.budget];
     const target = prefs.targetBudget || 1200000;
     
     const cheapPool = poolAllowed(DAM, prefs).filter(d => ['Đậu hũ', 'Trứng gà', 'Cá basa', 'Ức gà'].some(ing => d.ing.some(i => i[0].includes(ing))));
@@ -581,7 +671,7 @@ function Shell() {
         protein: (prefs.kids * DAILY_TARGET.kid.protein + prefs.elderly * DAILY_TARGET.elderly.protein + prefs.adults * DAILY_TARGET.adult.protein) * 7,
       };
       const currentNutrition = newPlan.reduce((sum, day) => {
-        const value = mealCalories(day);
+        const value = mealCalories(day, prefs);
         return { cal: sum.cal + value.cal * units, protein: sum.protein + value.protein * units };
       }, { cal: 0, protein: 0 });
       let bestSwap: { dayIdx: number; meal: 'lunch' | 'dinner'; dish: Dish; saving: number } | null = null;
@@ -603,7 +693,7 @@ function Shell() {
       const selected = bestSwap as { dayIdx: number; meal: 'lunch' | 'dinner'; dish: Dish; saving: number } | null;
       if (!selected) break;
       newPlan[selected.dayIdx][selected.meal].dam = selected.dish;
-      currentCost = Object.entries(aggregate(newPlan, units)).reduce((sum, [name, item]) => bought.has(name) ? sum : sum + priceFor(name, item.qty), 0) + PANTRY_COST[prefs.budget];
+      currentCost = Object.entries(aggregate(newPlan, units, prefs)).reduce((sum, [name, item]) => bought.has(name) ? sum : sum + priceFor(name, item.qty), 0) + PANTRY_COST[prefs.budget];
     }
     const changed = JSON.stringify(newPlan) !== JSON.stringify(plan);
     setPlan(newPlan);
@@ -615,7 +705,7 @@ function Shell() {
   if (location === '/shopping') page = <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} setQuantityOverrides={setQuantityOverrides} targetBudget={prefs.targetBudget || 1200000} />;
   else if (location === '/costs') page = <div className="space-y-5"><CostsPage shopping={shopping} prefs={prefs} totalCost={totalCost} plan={accessiblePlan} /><KitchenEquityCard weeklySaving={Math.max(0, (prefs.targetBudget || 1200000) - totalCost)} /></div>;
   else if (location === '/ask-ai') page = <AskAiPageV2 prefs={prefs} isPro={isPro} onUpgrade={() => openUpgrade('ai_limit')} />;
-  else page = <HomePage plan={plan} isPro={isPro} onUpgrade={() => openUpgrade('locked_week')} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} totalCost={totalCost} forceBudget={forceBudget} budgetNotice={budgetNotice} />;
+  else page = <HomePage plan={plan} isPro={isPro} onUpgrade={() => openUpgrade('locked_week')} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} totalCost={totalCost} forceBudget={forceBudget} budgetNotice={budgetNotice} swapNotice={swapNotice} onSwapDish={swapDish} />;
   return <div className="app-shell grain"><header className="content-wrap pt-5 md:pt-8"><div className="flex items-start justify-between gap-4"><Link href="/" className="flex items-center gap-3 no-underline" data-testid="link-home"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_5px_0_hsl(13_72%_43%)]"><ChefHat size={23} strokeWidth={2.4} /></span><span><span className="display-font block text-xl font-bold tracking-tight text-primary">30 Phút</span><span className="block text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">Yêu thương</span></span></Link><div className="top-actions flex items-center gap-2">{isPro ? <span className="inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-xs font-bold text-accent-foreground"><Crown size={13} /> Thành viên Pro</span> : <button onClick={() => openUpgrade('header')} className="tactile inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-2 text-xs font-bold text-primary-foreground" data-testid="button-header-upgrade"><Crown size={13} /> Nâng cấp Pro</button>}<button onClick={() => window.print()} className="tactile flex h-10 w-10 items-center justify-center rounded-full border bg-card text-muted-foreground" aria-label="In trang" data-testid="button-print"><Printer size={17} /></button></div></div></header><main className="content-wrap page-enter">{page}</main><BlogFooter /><BottomNav location={location} /><InstallAppBanner /><ProUpgradeModal open={upgradeOpen} onClose={() => setUpgradeOpen(false)} onUnlocked={unlockPro} /></div>;
 }
 
@@ -678,11 +768,27 @@ function HealingModeSettings({ prefs, updatePrefs, saveSettings }: { prefs: Pref
   </section>;
 }
 
+function AdvancedPreferences({ prefs, updatePrefs }: { prefs: Preferences; updatePrefs: (value: Partial<Preferences>) => void }) {
+  const meals = [['breakfast', 'Bữa sáng'], ['lunch', 'Bữa trưa'], ['dinner', 'Bữa tối']] as const;
+  const toggleMeal = (key: keyof Preferences['selectedMeals'], checked: boolean) => {
+    const next = { ...prefs.selectedMeals, [key]: checked };
+    if (Object.values(next).some(Boolean)) updatePrefs({ selectedMeals: next });
+  };
+  return <section className="paper-card border-primary/15 bg-card p-4 md:p-5" data-testid="advanced-profile-settings">
+    <div className="flex items-start gap-3"><span className="text-2xl">✨</span><div><p className="text-[10px] font-bold uppercase tracking-[.15em] text-primary">Hồ sơ cá nhân nâng cao</p><h2 className="display-font mt-1 text-2xl font-bold">Nhà mình ăn thế nào?</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Chọn đúng nhịp ăn để thực đơn, chi phí và dinh dưỡng khớp với gia đình.</p></div></div>
+    <div className="mt-4 grid gap-4 sm:grid-cols-2">
+      <SelectField label="Mục tiêu dinh dưỡng" value={prefs.specialNutrition} onChange={(value) => updatePrefs({ specialNutrition: value as SpecialNutrition, healingModes: ['stress', 'hormone', 'realfood'].includes(value) ? [value as HealingMode] : [] })} options={[['none','Không chọn'],['stress','Phục hồi stress'],['hormone','Cân bằng nội tiết U40–U50'],['realfood','Ít muối & thực phẩm nguyên bản'],['lowcarb','Ít tinh bột / kiểm soát cân nặng'],['who','Gia đình theo khuyến nghị WHO']]} testId="select-special-nutrition" />
+      <SelectField label="Số món chính mỗi bữa" value={String(prefs.dishesPerMainMeal)} onChange={(value) => updatePrefs({ dishesPerMainMeal: Number(value) as 1 | 2 | 3 })} options={[['1','1 món: chỉ món đạm'],['2','2 món: đạm + rau'],['3','3 món: đạm + rau + canh']]} testId="select-dishes-per-main-meal" />
+    </div>
+    <div className="mt-4"><p className="mb-2 text-xs font-bold text-muted-foreground">Bữa muốn lên thực đơn</p><div className="grid gap-2 sm:grid-cols-3">{meals.map(([key, label]) => <label key={key} className="flex items-center gap-2 rounded-xl border bg-background px-3 py-2.5 text-xs font-bold"><input type="checkbox" checked={prefs.selectedMeals[key]} onChange={(event) => toggleMeal(key, event.target.checked)} className="h-4 w-4 accent-primary" data-testid={`checkbox-meal-${key}`} />{label}</label>)}</div></div>
+  </section>;
+}
+
 function MindfulKitchenMessage() {
   return <aside className="rounded-2xl border border-[hsl(105_40%_75%)] bg-[hsl(103_40%_96%)] px-4 py-3.5 shadow-[0_8px_22px_rgba(71,105,45,.07)]" data-testid="mindful-kitchen-message"><p className="text-sm leading-6 text-[hsl(105_33%_25%)]"><strong>🌿 Hít một hơi thật sâu chị nhé!</strong> 30 phút tới là khoảng thời gian thiền bếp dành riêng cho chị. Hãy thả lỏng đôi vai, cảm nhận mùi thơm tự nhiên và nuôi dưỡng sức khỏe gia đình.</p></aside>;
 }
 
-function HomePage({ plan, isPro, onUpgrade, prefs, settingsOpen, setSettingsOpen, updatePrefs, saveSettings, regenerate, expandedDay, setExpandedDay, activeMeal, setActiveMeal, favoriteDishes, setFavoriteDishes, totalCost, forceBudget, budgetNotice }: { plan: DayPlan[]; isPro: boolean; onUpgrade: () => void; prefs: Preferences; settingsOpen: boolean; setSettingsOpen: (value: boolean) => void; updatePrefs: (value: Partial<Preferences>) => void; saveSettings: () => void; regenerate: () => void; expandedDay: number; setExpandedDay: (value: number) => void; activeMeal: 'all' | 'breakfast' | 'lunch' | 'dinner'; setActiveMeal: (value: 'all' | 'breakfast' | 'lunch' | 'dinner') => void; favoriteDishes: Set<string>; setFavoriteDishes: (value: Set<string>) => void; totalCost: number; forceBudget: () => void; budgetNotice: string }) {
+function HomePage({ plan, isPro, onUpgrade, prefs, settingsOpen, setSettingsOpen, updatePrefs, saveSettings, regenerate, expandedDay, setExpandedDay, activeMeal, setActiveMeal, favoriteDishes, setFavoriteDishes, totalCost, forceBudget, budgetNotice, swapNotice, onSwapDish }: { plan: DayPlan[]; isPro: boolean; onUpgrade: () => void; prefs: Preferences; settingsOpen: boolean; setSettingsOpen: (value: boolean) => void; updatePrefs: (value: Partial<Preferences>) => void; saveSettings: () => void; regenerate: () => void; expandedDay: number; setExpandedDay: (value: number) => void; activeMeal: 'all' | 'breakfast' | 'lunch' | 'dinner'; setActiveMeal: (value: 'all' | 'breakfast' | 'lunch' | 'dinner') => void; favoriteDishes: Set<string>; setFavoriteDishes: (value: Set<string>) => void; totalCost: number; forceBudget: () => void; budgetNotice: string; swapNotice: string; onSwapDish: (dayIndex: number, slot: DishSlot) => void }) {
   const today = plan[0];
   const household = `${prefs.kids + prefs.elderly + prefs.adults} người`;
   const visiblePlan = isPro ? plan : plan.slice(0, FREE_DAY_LIMIT);
@@ -690,10 +796,10 @@ function HomePage({ plan, isPro, onUpgrade, prefs, settingsOpen, setSettingsOpen
   return <div className="space-y-5 pb-5">
     <section className="relative overflow-hidden rounded-[28px] border border-[hsl(36_70%_82%)] bg-[linear-gradient(135deg,hsl(41_100%_91%),hsl(12_100%_93%)_55%,hsl(103_40%_90%))] px-5 py-6 shadow-[0_15px_35px_rgba(112,64,25,.08)] md:px-9 md:py-9"><div className="absolute -right-12 -top-16 h-44 w-44 rounded-full border-[18px] border-[hsl(43_100%_61%/.3)]" /><div className="relative max-w-2xl"><p className="mb-2 text-xs font-bold uppercase tracking-[.19em] text-[hsl(105_33%_30%)]">Bữa cơm hôm nay</p><h1 className="display-font max-w-xl text-[clamp(2.15rem,7vw,4.2rem)] font-bold leading-[.98] tracking-[-.04em] text-[hsl(13_72%_38%)]">Nấu nhanh một chút,<br /><span className="text-[hsl(105_33%_30%)]">thương nhau nhiều hơn.</span></h1><p className="mt-4 max-w-lg text-sm leading-6 text-muted-foreground">Một tuần đủ chất, vừa túi tiền và không làm bạn phải đứng bếp cả tối.</p><div className="mt-5 flex flex-wrap items-center gap-2"><span className="inline-flex items-center gap-1.5 rounded-full bg-card/80 px-3 py-2 text-xs font-bold text-foreground"><Users size={14} className="text-primary" /> {household}</span><span className="inline-flex items-center gap-1.5 rounded-full bg-card/80 px-3 py-2 text-xs font-bold text-foreground"><Clock3 size={14} className="text-[hsl(105_33%_30%)]" /> {prefs.maxTime} phút / bữa</span><span className="inline-flex items-center gap-1.5 rounded-full bg-card/80 px-3 py-2 text-xs font-bold text-foreground"><Leaf size={14} className="text-[hsl(105_33%_30%)]" /> {budgetLabels[prefs.budget]}</span></div></div></section>
     <SettingsPanel open={settingsOpen} setOpen={setSettingsOpen} prefs={prefs} updatePrefs={updatePrefs} saveSettings={saveSettings} />
-    {settingsOpen && <HealingModeSettings prefs={prefs} updatePrefs={updatePrefs} saveSettings={saveSettings} />}
+     {settingsOpen && <><AdvancedPreferences prefs={prefs} updatePrefs={updatePrefs} /><HealingModeSettings prefs={prefs} updatePrefs={updatePrefs} saveSettings={saveSettings} /></>}
     <MindfulKitchenMessage />
     <section className="grid gap-5 lg:grid-cols-[1.15fr_.85fr]">
-      <div className="min-w-0 space-y-4"><div className="flex items-end justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-primary">{isPro ? 'Trọn tuần' : 'Gói miễn phí · 3 ngày đầu'}</p><h2 className="display-font mt-1 text-3xl font-bold tracking-tight">Mình ăn gì nhỉ?</h2></div><button onClick={regenerate} className="tactile inline-flex items-center gap-2 rounded-full border border-primary/30 bg-card px-3.5 py-2 text-xs font-bold text-primary" data-testid="button-regenerate"><RefreshCw size={14} /> Đổi tuần khác</button></div><div className="flex max-w-full gap-2 overflow-x-auto pb-1" role="tablist">{[['all','Tất cả'],['breakfast','Bữa sáng'],['lunch','Bữa trưa'],['dinner','Bữa tối']].map(([value,label]) => <button key={value} onClick={() => setActiveMeal(value as typeof activeMeal)} className={`whitespace-nowrap rounded-full px-4 py-2 text-xs font-bold transition-colors ${activeMeal === value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}`} data-testid={`button-filter-${value}`}>{label}</button>)}</div><BudgetWarning plan={plan} units={units} p={prefs} totalCost={totalCost} forceBudget={forceBudget} />{budgetNotice && <p className="rounded-xl border border-amber-400/40 bg-amber-50 p-3 text-xs font-bold leading-5 text-amber-800" role="status" data-testid="budget-infeasible-notice">{budgetNotice}</p>}{visiblePlan.map((day, index) => <DayCard key={day.day} day={day} index={index} open={expandedDay === index} setOpen={() => setExpandedDay(expandedDay === index ? -1 : index)} activeMeal={activeMeal} favorites={favoriteDishes} setFavorites={setFavoriteDishes} />)}{!isPro && <LockedWeekBanner onUpgrade={onUpgrade} />}</div>
+      <div className="min-w-0 space-y-4"><div className="flex items-end justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-primary">{isPro ? 'Trọn tuần' : 'Gói miễn phí · 3 ngày đầu'}</p><h2 className="display-font mt-1 text-3xl font-bold tracking-tight">Mình ăn gì nhỉ?</h2></div><button onClick={regenerate} className="tactile inline-flex items-center gap-2 rounded-full border border-primary/30 bg-card px-3.5 py-2 text-xs font-bold text-primary" data-testid="button-regenerate"><RefreshCw size={14} /> Đổi tuần khác</button></div><div className="flex max-w-full gap-2 overflow-x-auto pb-1" role="tablist">{[['all','Tất cả'],['breakfast','Bữa sáng'],['lunch','Bữa trưa'],['dinner','Bữa tối']].filter(([value]) => value === 'all' || prefs.selectedMeals[value as keyof Preferences['selectedMeals']]).map(([value,label]) => <button key={value} onClick={() => setActiveMeal(value as typeof activeMeal)} className={`whitespace-nowrap rounded-full px-4 py-2 text-xs font-bold transition-colors ${activeMeal === value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}`} data-testid={`button-filter-${value}`}>{label}</button>)}</div><BudgetWarning plan={plan} units={units} p={prefs} totalCost={totalCost} forceBudget={forceBudget} />{budgetNotice && <p className="rounded-xl border border-amber-400/40 bg-amber-50 p-3 text-xs font-bold leading-5 text-amber-800" role="status" data-testid="budget-infeasible-notice">{budgetNotice}</p>}{swapNotice && <p className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs font-bold leading-5 text-foreground" role="status" data-testid="status-dish-swap">{swapNotice}</p>}{visiblePlan.map((day, index) => <DayCard key={day.day} day={day} index={index} open={expandedDay === index} setOpen={() => setExpandedDay(expandedDay === index ? -1 : index)} activeMeal={activeMeal} favorites={favoriteDishes} setFavorites={setFavoriteDishes} prefs={prefs} onSwap={(slot) => onSwapDish(index, slot)} />)}{!isPro && <LockedWeekBanner onUpgrade={onUpgrade} />}</div>
       <aside className="space-y-4"><div className="paper-card p-5"><h3 className="text-sm font-bold flex items-center gap-2 mb-4"><WalletCards size={17} className="text-primary" /> Ngân sách tuần này</h3><BudgetProgress totalCost={totalCost} targetBudget={prefs.targetBudget || 1200000} /></div><TodayCard day={today} prefs={prefs} /><NutritionCard plan={visiblePlan} prefs={prefs} /><NewsletterSignup /><div className="paper-card hidden overflow-hidden p-5 md:block"><div className="flex items-center gap-2 text-sm font-bold"><Sparkles size={17} className="text-primary" /> Mẹo để bếp nhẹ tênh</div><p className="mt-3 text-sm leading-6 text-muted-foreground">Sơ chế hành, gừng và rau củ ngay sau khi đi chợ. Đến bữa chỉ cần mở nồi hấp — 30 phút đủ cho cả nhà ngồi vào mâm.</p></div></aside>
     </section>
   </div>;
@@ -780,15 +886,45 @@ function SettingsPanel({ open, setOpen, prefs, updatePrefs, saveSettings }: { op
 function NumberField({ label, hint, value, onChange, testId }: { label: string; hint: string; value: number; onChange: (value: number) => void; testId: string }) { return <label className="block text-xs font-bold text-muted-foreground">{label}<input type="number" min="0" max="12" value={value} onChange={(event) => onChange(Math.max(0, Number(event.target.value)))} className="mt-1.5 w-full rounded-xl border bg-card px-3 py-2.5 text-center text-base font-bold text-foreground outline-none ring-primary focus:ring-2" data-testid={testId} /><span className="mt-1 block text-[10px] font-medium text-muted-foreground">{hint}</span></label>; }
 function SelectField({ label, value, onChange, options, testId }: { label: string; value: string; onChange: (value: string) => void; options: string[][]; testId: string }) { return <label className="block text-xs font-bold text-muted-foreground">{label}<select value={value} onChange={(event) => onChange(event.target.value)} className="mt-1.5 w-full rounded-xl border bg-card px-3 py-2.5 text-sm font-bold text-foreground outline-none ring-primary focus:ring-2" data-testid={testId}>{options.map(([optionValue, labelText]) => <option key={optionValue} value={optionValue}>{labelText}</option>)}</select></label>; }
 
-function DayCard({ day, index, open, setOpen, activeMeal, favorites, setFavorites }: { day: DayPlan; index: number; open: boolean; setOpen: () => void; activeMeal: 'all' | 'breakfast' | 'lunch' | 'dinner'; favorites: Set<string>; setFavorites: (value: Set<string>) => void }) {
-  const total = mealCalories(day);
-  const mealEntries: { key: 'breakfast' | 'lunch' | 'dinner'; label: string; dishes: Dish[]; color: string }[] = [{ key: 'breakfast', label: 'Sáng', dishes: [day.breakfast], color: 'bg-[hsl(43_100%_61%/.22)]' }, { key: 'lunch', label: 'Trưa', dishes: [day.lunch.dam, day.lunch.rau, day.lunch.canh], color: 'bg-[hsl(103_40%_90%)]' }, { key: 'dinner', label: 'Tối', dishes: [day.dinner.dam, day.dinner.rau, day.dinner.canh], color: 'bg-[hsl(12_100%_93%)]' }];
-  const visible = activeMeal === 'all' ? mealEntries : mealEntries.filter((entry) => entry.key === activeMeal);
-  return <article className={`paper-card overflow-hidden transition-shadow ${open ? 'shadow-[0_14px_32px_rgba(86,51,22,.11)]' : ''}`}><button onClick={setOpen} className="flex w-full items-center justify-between gap-4 p-4 text-left md:p-5" data-testid={`button-day-${index}`}><span className="flex items-center gap-3"><span className={`flex h-10 w-10 items-center justify-center rounded-2xl text-xs font-bold ${index === 0 ? 'bg-primary text-primary-foreground' : 'bg-secondary text-secondary-foreground'}`}>{index === 0 ? 'Nay' : String(index + 1).padStart(2, '0')}</span><span><span className="block text-sm font-bold">{day.day}{index === 0 && <span className="ml-2 rounded-full bg-primary/10 px-2 py-1 text-[10px] text-primary">Hôm nay</span>}</span><span className="mt-0.5 block text-xs text-muted-foreground">{day.breakfast.name} · {total.cal.toFixed(0)} kcal / khẩu phần</span></span></span><span className="flex items-center gap-2 text-muted-foreground">{open ? <ChevronUp size={18} /> : <ChevronDown size={18} />}</span></button>{open && <div className="space-y-3 border-t px-4 pb-4 pt-3 md:px-5 md:pb-5">{visible.map((meal) => <div key={meal.key} className={`rounded-2xl p-3 ${meal.color}`}><div className="mb-2 flex items-center justify-between"><span className="text-[11px] font-bold uppercase tracking-[.15em] text-muted-foreground">{meal.label}</span><span className="flex items-center gap-1 text-[11px] font-bold text-muted-foreground"><Clock3 size={12} /> {Math.max(...meal.dishes.map((item) => item.time)) + (meal.key === 'breakfast' ? 0 : 8)} phút</span></div><div className="space-y-2">{meal.dishes.map((dish) => <DishRow key={dish.name} dish={dish} favorite={favorites.has(dish.name)} onFavorite={() => { const next = new Set(favorites); next.has(dish.name) ? next.delete(dish.name) : next.add(dish.name); setFavorites(next); }} />)}</div></div>)}</div>}</article>;
+function DayCard({ day, index, open, setOpen, activeMeal, favorites, setFavorites, prefs, onSwap }: { day: DayPlan; index: number; open: boolean; setOpen: () => void; activeMeal: 'all' | 'breakfast' | 'lunch' | 'dinner'; favorites: Set<string>; setFavorites: (value: Set<string>) => void; prefs: Preferences; onSwap: (slot: DishSlot) => void }) {
+  const total = mealCalories(day, prefs);
+  const count = prefs.dishesPerMainMeal;
+  const mealEntries: { key: 'breakfast' | 'lunch' | 'dinner'; label: string; dishes: { dish: Dish; slot: DishSlot }[]; color: string }[] = [
+    { key: 'breakfast', label: 'Sáng', dishes: prefs.selectedMeals.breakfast ? [{ dish: day.breakfast, slot: 'breakfast' }] : [], color: 'bg-[hsl(43_100%_61%/.22)]' },
+    { key: 'lunch', label: 'Trưa', dishes: prefs.selectedMeals.lunch ? [{ dish: day.lunch.dam, slot: 'lunch.dam' }, ...(count >= 2 ? [{ dish: day.lunch.rau, slot: 'lunch.rau' as DishSlot }] : []), ...(count >= 3 ? [{ dish: day.lunch.canh, slot: 'lunch.canh' as DishSlot }] : [])] : [], color: 'bg-[hsl(103_40%_90%)]' },
+    { key: 'dinner', label: 'Tối', dishes: prefs.selectedMeals.dinner ? [{ dish: day.dinner.dam, slot: 'dinner.dam' }, ...(count >= 2 ? [{ dish: day.dinner.rau, slot: 'dinner.rau' as DishSlot }] : []), ...(count >= 3 ? [{ dish: day.dinner.canh, slot: 'dinner.canh' as DishSlot }] : [])] : [], color: 'bg-[hsl(12_100%_93%)]' },
+  ];
+  const available = mealEntries.filter((entry) => entry.dishes.length > 0);
+  const visible = activeMeal === 'all' ? available : available.filter((entry) => entry.key === activeMeal);
+  const summaryDish = available[0]?.dishes[0]?.dish;
+  return <article className={`paper-card overflow-hidden transition-shadow ${open ? 'shadow-[0_14px_32px_rgba(86,51,22,.11)]' : ''}`}>
+    <button onClick={setOpen} className="flex w-full items-center justify-between gap-4 p-4 text-left md:p-5" data-testid={`button-day-${index}`}>
+      <span className="flex items-center gap-3"><span className={`flex h-10 w-10 items-center justify-center rounded-2xl text-xs font-bold ${index === 0 ? 'bg-primary text-primary-foreground' : 'bg-secondary text-secondary-foreground'}`}>{index === 0 ? 'Nay' : String(index + 1).padStart(2, '0')}</span><span><span className="block text-sm font-bold">{day.day}{index === 0 && <span className="ml-2 rounded-full bg-primary/10 px-2 py-1 text-[10px] text-primary">Hôm nay</span>}</span><span className="mt-0.5 block text-xs text-muted-foreground">{summaryDish?.name || 'Chưa chọn bữa'} · {total.cal.toFixed(0)} kcal / khẩu phần</span></span></span>
+      <span className="text-muted-foreground">{open ? <ChevronUp size={18} /> : <ChevronDown size={18} />}</span>
+    </button>
+    {open && <div className="space-y-3 border-t px-4 pb-4 pt-3 md:px-5 md:pb-5">{visible.map((meal) => <div key={meal.key} className={`rounded-2xl p-3 ${meal.color}`}>
+      <div className="mb-2 flex items-center justify-between"><span className="text-[11px] font-bold uppercase tracking-[.15em] text-muted-foreground">{meal.label}</span><span className="flex items-center gap-1 text-[11px] font-bold text-muted-foreground"><Clock3 size={12} /> {Math.max(...meal.dishes.map(({ dish }) => dish.time)) + (meal.key === 'breakfast' ? 0 : 8)} phút</span></div>
+      <div className="space-y-2">{meal.dishes.map(({ dish, slot }) => <DishRow key={slot} dish={dish} favorite={favorites.has(dish.name)} onSwap={() => onSwap(slot)} onFavorite={() => { const next = new Set(favorites); next.has(dish.name) ? next.delete(dish.name) : next.add(dish.name); setFavorites(next); }} />)}</div>
+    </div>)}</div>}
+  </article>;
 }
-function DishRow({ dish, favorite, onFavorite }: { dish: Dish; favorite: boolean; onFavorite: () => void }) { const n = nutrition(dish); return <div className="flex items-start justify-between gap-3 rounded-xl bg-card/80 p-3"><div className="min-w-0"><p className="text-sm font-bold leading-5">{dish.name}</p><div className="mt-1 flex flex-wrap gap-1.5">{(dish.tags || []).slice(0, 2).map((tag) => <span key={tag} className="rounded-full border bg-background px-2 py-0.5 text-[10px] font-bold text-muted-foreground">{tag}</span>)}<span className="rounded-full bg-[hsl(43_100%_61%/.2)] px-2 py-0.5 text-[10px] font-bold text-foreground">{Math.round(n.cal)} kcal</span></div></div><button onClick={onFavorite} className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${favorite ? 'border-primary bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`} aria-label="Đánh dấu món yêu thích" data-testid={`button-favorite-${dish.name}`}><Heart size={15} fill={favorite ? 'currentColor' : 'none'} /></button></div>; }
-function TodayCard({ day, prefs }: { day: DayPlan; prefs: Preferences }) { const total = mealCalories(day); return <section className="paper-card overflow-hidden"><div className="flex items-center justify-between bg-foreground px-5 py-4 text-background"><div><p className="text-[10px] font-bold uppercase tracking-[.17em] opacity-65">Mâm cơm hôm nay</p><h3 className="display-font mt-1 text-2xl font-bold">{day.day}</h3></div><span className="rounded-full bg-background/10 px-3 py-1.5 text-xs font-bold">{prefs.maxTime} phút</span></div><div className="space-y-3 p-5"><div className="rounded-2xl bg-secondary/70 p-4"><p className="text-[10px] font-bold uppercase tracking-[.15em] text-secondary-foreground">Bữa sáng</p><p className="mt-1 text-sm font-bold">{day.breakfast.name}</p></div><div className="grid grid-cols-2 gap-3"><div className="rounded-2xl bg-[hsl(103_40%_90%)] p-4"><p className="text-[10px] font-bold uppercase tracking-[.15em] text-[hsl(105_33%_30%)]">Trưa</p><p className="mt-1 text-xs font-bold leading-5">{day.lunch.dam.name}</p></div><div className="rounded-2xl bg-[hsl(12_100%_93%)] p-4"><p className="text-[10px] font-bold uppercase tracking-[.15em] text-primary">Tối</p><p className="mt-1 text-xs font-bold leading-5">{day.dinner.dam.name}</p></div></div><div className="flex items-center justify-between border-t pt-3 text-xs text-muted-foreground"><span className="inline-flex items-center gap-1.5"><BadgeCheck size={14} className="text-[hsl(105_33%_30%)]" /> Đủ 3 bữa</span><span className="font-bold text-foreground">{Math.round(total.cal).toLocaleString('vi-VN')} kcal</span></div></div></section>; }
-function NutritionCard({ plan, prefs }: { plan: DayPlan[]; prefs: Preferences }) { const avg = plan.reduce((sum, day) => sum + mealCalories(day).cal, 0) / plan.length * unitsOf(prefs); const target = prefs.kids * DAILY_TARGET.kid.calories + prefs.elderly * DAILY_TARGET.elderly.calories + prefs.adults * DAILY_TARGET.adult.calories; const ratio = Math.min(100, Math.round(avg / target * 100)); return <section className="paper-card p-5"><div className="flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-[.14em] text-muted-foreground">Dinh dưỡng dự kiến</p><h3 className="display-font mt-1 text-xl font-bold">Vừa đủ cho cả nhà</h3></div><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[hsl(103_40%_90%)] text-[hsl(105_33%_30%)]"><Leaf size={20} /></span></div><div className="mt-5"><div className="mb-2 flex justify-between text-xs font-bold"><span>Trung bình / ngày</span><span className="text-[hsl(105_33%_30%)]">{ratio}% mục tiêu</span></div><div className="h-3 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-[hsl(105_40%_45%)] transition-[width] duration-500" style={{ width: `${ratio}%` }} /></div><p className="mt-3 text-xs leading-5 text-muted-foreground">Tính theo khẩu phần của {prefs.adults + prefs.elderly + prefs.kids} thành viên và công thức dinh dưỡng từ kho món địa phương.</p></div></section>; }
+function DishRow({ dish, favorite, onFavorite, onSwap }: { dish: Dish; favorite: boolean; onFavorite: () => void; onSwap?: () => void }) { const n = nutrition(dish); return <div className="flex items-start justify-between gap-3 rounded-xl bg-card/80 p-3"><div className="min-w-0"><p className="text-sm font-bold leading-5">{dish.name}</p><div className="mt-1 flex flex-wrap gap-1.5">{(dish.tags || []).slice(0, 2).map((tag) => <span key={tag} className="rounded-full border bg-background px-2 py-0.5 text-[10px] font-bold text-muted-foreground">{tag}</span>)}<span className="rounded-full bg-[hsl(43_100%_61%/.2)] px-2 py-0.5 text-[10px] font-bold text-foreground">{Math.round(n.cal)} kcal</span></div></div><div className="flex shrink-0 items-center gap-1"><button onClick={onSwap} className="flex h-8 items-center gap-1 rounded-full border bg-card px-2 text-[11px] font-bold text-primary" aria-label="🔄 Đổi món này" data-testid={`button-swap-${dish.name}`} title="🔄 Đổi món này"><RefreshCw size={13} /> <span className="hidden sm:inline">Đổi món</span></button><button onClick={onFavorite} className={`flex h-8 w-8 items-center justify-center rounded-full border ${favorite ? 'border-primary bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`} aria-label="Đánh dấu món yêu thích" data-testid={`button-favorite-${dish.name}`}><Heart size={15} fill={favorite ? 'currentColor' : 'none'} /></button></div></div>; }
+function TodayCard({ day, prefs }: { day: DayPlan; prefs: Preferences }) {
+  const total = mealCalories(day, prefs);
+  const activeCount = Object.values(prefs.selectedMeals).filter(Boolean).length;
+  return <section className="paper-card overflow-hidden">
+    <div className="flex items-center justify-between bg-foreground px-5 py-4 text-background"><div><p className="text-[10px] font-bold uppercase tracking-[.17em] opacity-65">Mâm cơm hôm nay</p><h3 className="display-font mt-1 text-2xl font-bold">{day.day}</h3></div><span className="rounded-full bg-background/10 px-3 py-1.5 text-xs font-bold">{prefs.maxTime} phút</span></div>
+    <div className="space-y-3 p-5">
+      {prefs.selectedMeals.breakfast && <div className="rounded-2xl bg-secondary/70 p-4"><p className="text-[10px] font-bold uppercase tracking-[.15em] text-secondary-foreground">Bữa sáng</p><p className="mt-1 text-sm font-bold">{day.breakfast.name}</p></div>}
+      <div className="grid gap-3 sm:grid-cols-2">
+        {prefs.selectedMeals.lunch && <div className="rounded-2xl bg-[hsl(103_40%_90%)] p-4"><p className="text-[10px] font-bold uppercase tracking-[.15em] text-[hsl(105_33%_30%)]">Trưa</p><p className="mt-1 text-xs font-bold leading-5">{day.lunch.dam.name}</p></div>}
+        {prefs.selectedMeals.dinner && <div className="rounded-2xl bg-[hsl(12_100%_93%)] p-4"><p className="text-[10px] font-bold uppercase tracking-[.15em] text-primary">Tối</p><p className="mt-1 text-xs font-bold leading-5">{day.dinner.dam.name}</p></div>}
+      </div>
+      <div className="flex items-center justify-between border-t pt-3 text-xs text-muted-foreground"><span className="inline-flex items-center gap-1.5"><BadgeCheck size={14} className="text-[hsl(105_33%_30%)]" /> {activeCount} bữa đã chọn</span><span className="font-bold text-foreground">{Math.round(total.cal).toLocaleString('vi-VN')} kcal</span></div>
+    </div>
+  </section>;
+}
+function NutritionCard({ plan, prefs }: { plan: DayPlan[]; prefs: Preferences }) { const avg = plan.reduce((sum, day) => sum + mealCalories(day, prefs).cal, 0) / plan.length * unitsOf(prefs); const target = prefs.kids * DAILY_TARGET.kid.calories + prefs.elderly * DAILY_TARGET.elderly.calories + prefs.adults * DAILY_TARGET.adult.calories; const ratio = Math.min(100, Math.round(avg / target * 100)); return <section className="paper-card p-5"><div className="flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-[.14em] text-muted-foreground">Dinh dưỡng dự kiến</p><h3 className="display-font mt-1 text-xl font-bold">Vừa đủ cho cả nhà</h3></div><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[hsl(103_40%_90%)] text-[hsl(105_33%_30%)]"><Leaf size={20} /></span></div><div className="mt-5"><div className="mb-2 flex justify-between text-xs font-bold"><span>Trung bình / ngày</span><span className="text-[hsl(105_33%_30%)]">{ratio}% mục tiêu</span></div><div className="h-3 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-[hsl(105_40%_45%)] transition-[width] duration-500" style={{ width: `${ratio}%` }} /></div><p className="mt-3 text-xs leading-5 text-muted-foreground">Tính theo khẩu phần của {prefs.adults + prefs.elderly + prefs.kids} thành viên và công thức dinh dưỡng từ kho món địa phương.</p></div></section>; }
 
 function ShoppingPage({ shopping, bought, setBought, customItems, setCustomItems, totalCost }: { shopping: Aggregate; bought: Set<string>; setBought: (value: Set<string>) => void; customItems: { name: string; bought: boolean }[]; setCustomItems: (value: { name: string; bought: boolean }[]) => void; totalCost: number }) {
   const [newItem, setNewItem] = useState('');

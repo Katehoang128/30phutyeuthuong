@@ -1,0 +1,23 @@
+Hãy nâng cấp thuật toán và giao diện tạo thực đơn cho Web App "30 Phút Yêu Thương" với tính năng cá nhân hóa chuyên sâu và chống trùng món như sau:
+
+1. Thêm Khai Báo Hồ Sơ Khẩu Vị & Sức Khỏe (User Preferences & Health Profile):
+   - Cho phép người dùng chọn/nhập các thông tin sau trong phần Cài Đặt Thực Đơn:
+     + 🚫 [Thực phẩm dị ứng / Không ăn được]: Danh sách dạng thẻ (checkbox/tags) gồm Tôm, Cua/Hải sản, Trứng, Đậu nành, Thịt bò, Măng, Nấm... và 1 ô cho phép nhập tự do.
+     + ❤️ [Món ăn/Nguyên liệu yêu thích]: Ô nhập tự do (ví dụ: Thịt kho, Cá hấp, Rau muống, Bò lúc lắc...).
+     + 🥗 [Chế độ dinh dưỡng đặc biệt]: Dropdown chọn Chữa lành tâm trí, Cân bằng nội tiết U40-U50, Thực dưỡng nhạt muối, Giảm cân/Low-carb, Chuẩn WHO cho gia đình.
+     + 🍽️ [Cấu trúc buổi ăn]: Chọn số bữa/ngày (Bữa Sáng, Bữa Trưa, Bữa Tối) và số món/bữa (1 món mặn + 1 món canh + 1 món rau).
+
+2. Thuật Toán Tạo Thực Đơn Đa Dạng & Chống Trùng Món (Anti-Repetition Algorithm):
+   - LỌC TUYỆT ĐỐI (Strict Filter): Loại bỏ 100% các món chứa nguyên liệu nằm trong danh sách [Thực phẩm dị ứng].
+   - ƯU TIÊN (Priority System): Tăng tần suất xuất hiện của [Món ăn yêu thích] (nhưng không trùng quá 2 lần/tuần) và tuân thủ [Chế độ dinh dưỡng].
+   - CHỐNG TRÙNG MÓN (No-Repeat Rules):
+     + Trong vòng 7 ngày (21 bữa), KHÔNG lặp lại cùng một món ăn chính (ví dụ: đã có Thịt kho tàu T2 thì T3-CN không xuất hiện lại).
+     + Đổi mới loại đạm liên tục giữa các bữa: Nếu trưa ăn Đạm Heo, tối chuyển sang Đạm Cá/Hải sản hoặc Gà/Trứng.
+     + Đa dạng phương pháp chế biến: Luân phiên giữa Kho - Luộc/Hấp - Xào - Canh, không trùng 2 món xào hoặc 2 món kho trong cùng 1 mâm cơm.
+
+3. Tính Năng "Đổi Món 1-Chạm" (Smart Swap Single Item):
+   - Bên cạnh mỗi món ăn trong thực đơn, thêm một nút bấm nhỏ "🔄 Đổi món này".
+   - Khi bấm, AI chỉ đổi duy nhất món đó sang một món mới cùng nhóm dinh dưỡng (mặn/canh/rau) và cùng tầm giá, vẫn đảm bảo tuân thủ tiêu chí Không dị ứng & Không trùng với các món khác trong tuần.
+
+4. Cập Nhật Kho Dữ Liệu Món Ăn (Expanded Recipe Database):
+   - Mở rộng kho dữ liệu món ăn Việt Nam phong phú (>100 món ăn gia đình truyền thống và chữa lành) phân loại rõ theo: Nhóm đạm, Cách chế biến, Thành phần gây dị ứng, Chi phí ước tính.

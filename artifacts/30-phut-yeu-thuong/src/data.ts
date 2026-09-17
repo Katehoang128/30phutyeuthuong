@@ -6,11 +6,56 @@ export type Dish = {
   costTier?: 'thap' | 'vua' | 'cao';
   method?: string;
   tags?: string[];
+  proteinGroup?: 'fish' | 'seafood' | 'pork' | 'chicken' | 'egg' | 'soy' | 'plant';
+  preparation?: 'steam' | 'boil' | 'braise' | 'stirfry' | 'soup' | 'grill' | 'raw' | 'porridge';
+  allergens?: string[];
   ing: Ingredient[];
   type?: 'sang' | 'dam' | 'rau' | 'canh';
 };
 
-const d = (name: string, time: number, ing: Ingredient[], extra: Partial<Dish> = {}): Dish => ({ name, time, ing, ...extra });
+const inferProteinGroup = (name: string, ing: Ingredient[]): NonNullable<Dish['proteinGroup']> => {
+  const text = `${name} ${ing.map(([ingredient]) => ingredient).join(' ')}`.toLowerCase();
+  if (/(tôm|cua|mực|hải sản)/.test(text)) return 'seafood';
+  if (/(cá|cá hồi)/.test(text)) return 'fish';
+  if (/(heo|thịt bằm|thịt viên|chả lụa)/.test(text)) return 'pork';
+  if (/(gà|ức gà|đùi gà)/.test(text)) return 'chicken';
+  if (/trứng/.test(text)) return 'egg';
+  if (/(đậu hũ|đậu nành)/.test(text)) return 'soy';
+  return 'plant';
+};
+
+const inferPreparation = (method?: string): NonNullable<Dish['preparation']> => {
+  if (method === 'braise') return 'braise';
+  if (method === 'stirfry' || method === 'panfry' || method === 'friedegg') return 'stirfry';
+  if (method === 'soup' || method === 'oatsoup' || method === 'phobun') return 'soup';
+  if (method === 'porridge') return 'porridge';
+  if (method === 'airfry') return 'grill';
+  if (method === 'nocook' || method === 'soak' || method === 'readymade') return 'raw';
+  if (method === 'steam' || method === 'boilsteam' || method === 'xoi') return 'steam';
+  return 'boil';
+};
+
+const inferAllergens = (name: string, ing: Ingredient[]) => {
+  const text = `${name} ${ing.map(([ingredient]) => ingredient).join(' ')}`.toLowerCase();
+  return [
+    ...(/tôm/.test(text) ? ['tôm'] : []),
+    ...(/(cua|mực|hải sản)/.test(text) ? ['hải sản'] : []),
+    ...(/trứng/.test(text) ? ['trứng'] : []),
+    ...(/(đậu hũ|đậu nành)/.test(text) ? ['đậu nành'] : []),
+    ...(/sữa/.test(text) ? ['sữa'] : []),
+    ...(/(bánh mì|bánh cuốn)/.test(text) ? ['gluten'] : []),
+  ];
+};
+
+const d = (name: string, time: number, ing: Ingredient[], extra: Partial<Dish> = {}): Dish => ({
+  name,
+  time,
+  ing,
+  proteinGroup: inferProteinGroup(name, ing),
+  preparation: inferPreparation(extra.method),
+  allergens: inferAllergens(name, ing),
+  ...extra,
+});
 
 export const BREAKFAST: Dish[] = [
   d('Cháo trứng bí đỏ',10,[['Gạo tẻ',25],['Bí đỏ',40],['Trứng gà',.4,'quả']],{veg:true,costTier:'thap',method:'porridge',tags:['Dễ tiêu','Vitamin A']}),
@@ -27,6 +72,14 @@ export const BREAKFAST: Dish[] = [
   d('Bánh mì chảo trứng thịt',10,[['Bánh mì',1,'ổ'],['Trứng gà',.5,'quả'],['Thịt heo xay',20]],{costTier:'vua',method:'friedegg',tags:['Đạm','Nhanh gọn']}),
   d('Bún đậu hũ cà chua',15,[['Bún gạo',70],['Đậu hũ',40],['Cà chua',30]],{veg:true,costTier:'thap',method:'phobun',tags:['Đạm thực vật']}),
   d('Sữa tươi & trái cây tươi',3,[['Sữa tươi không đường',200,'ml'],['Chuối',60]],{veg:true,costTier:'thap',method:'nocook',tags:['Nhanh gọn']}),
+  d('Cháo cá lóc rau ngót',20,[['Gạo tẻ',25],['Cá lóc hoặc cá basa',45],['Rau ngót',20]],{costTier:'vua',method:'porridge',preparation:'porridge',proteinGroup:'fish',allergens:[],tags:['Dễ tiêu','Omega-3']}),
+  d('Cháo gà cà rốt',20,[['Gạo tẻ',25],['Ức gà hoặc đùi gà',45],['Cà rốt',20]],{costTier:'thap',method:'porridge',preparation:'porridge',proteinGroup:'chicken',allergens:[],tags:['Đạm nạc','Dễ tiêu']}),
+  d('Cháo đậu xanh bí đỏ',18,[['Gạo tẻ',20],['Đậu xanh',20],['Bí đỏ',40]],{veg:true,costTier:'thap',method:'porridge',preparation:'porridge',proteinGroup:'plant',allergens:[],tags:['Thanh nhẹ','Chất xơ']}),
+  d('Bún gạo trứng rau muống',12,[['Bún gạo',70],['Trứng gà',1,'quả'],['Rau muống hoặc rau lang',40]],{veg:true,costTier:'thap',method:'stirfry',preparation:'stirfry',proteinGroup:'egg',allergens:['trứng'],tags:['Nhanh gọn','Sắt']}),
+  d('Khoai lang nghiền sữa',8,[['Khoai lang',120],['Sữa tươi không đường',80,'ml']],{veg:true,costTier:'thap',method:'boilsteam',preparation:'boil',proteinGroup:'plant',allergens:['sữa'],tags:['Dễ tiêu','Chất xơ']}),
+  d('Xôi đậu xanh bí đỏ',15,[['Gạo nếp',55],['Đậu xanh',20],['Bí đỏ',30]],{veg:true,costTier:'thap',method:'xoi',preparation:'steam',proteinGroup:'plant',allergens:[],tags:['Năng lượng bền','Beta-caroten']}),
+  d('Bánh mì gà xé rau cải',12,[['Bánh mì',1,'ổ'],['Ức gà hoặc đùi gà',45],['Cải thảo',25]],{costTier:'vua',method:'readymade',preparation:'raw',proteinGroup:'chicken',allergens:['gluten'],tags:['Đạm nạc','Nhanh gọn']}),
+  d('Bún cá basa cà chua',18,[['Bún gạo',70],['Cá basa hoặc cá lóc phi lê',55],['Cà chua',40]],{costTier:'vua',method:'phobun',preparation:'soup',proteinGroup:'fish',allergens:[],tags:['Omega-3','Ấm bụng']}),
 ];
 
 export const DAM: Dish[] = [
@@ -62,6 +115,16 @@ export const DAM: Dish[] = [
   d('Đậu hũ chiên không dầu giòn',12,[['Đậu hũ',150]],{veg:true,costTier:'thap',method:'airfry',tags:['Đạm thực vật','Chay']}),
   d('Gan heo nướng/chiên không dầu',15,[['Gan heo',100]],{costTier:'thap',method:'airfry',tags:['Sắt']}),
   d('Mực nướng sa tế nhẹ',12,[['Mực tươi',110]],{costTier:'cao',method:'airfry',tags:['Đạm']}),
+  d('Cá basa kho gừng',22,[['Cá basa hoặc cá lóc phi lê',120],['Gừng',6]],{costTier:'vua',method:'braise',preparation:'braise',proteinGroup:'fish',allergens:[],tags:['Omega-3','Ấm bụng']}),
+  d('Cá diêu hồng hấp bí xanh',20,[['Cá diêu hồng',120],['Bí xanh',50]],{costTier:'vua',method:'steam',preparation:'steam',proteinGroup:'fish',allergens:[],tags:['Dễ tiêu','Đạm']}),
+  d('Tôm rim cà chua nhạt',18,[['Tôm tươi',100],['Cà chua',50]],{costTier:'cao',method:'braise',preparation:'braise',proteinGroup:'seafood',allergens:['tôm'],tags:['Đạm','Kẽm']}),
+  d('Mực xào cải thìa',15,[['Mực tươi',100],['Cải thìa',80]],{costTier:'cao',method:'stirfry',preparation:'stirfry',proteinGroup:'seafood',allergens:['mực'],tags:['Đạm','Canxi']}),
+  d('Thịt heo kho cà rốt',25,[['Thịt heo xay',90],['Cà rốt',60]],{costTier:'thap',method:'braise',preparation:'braise',proteinGroup:'pork',allergens:[],tags:['Đạm','Vitamin A']}),
+  d('Thịt heo hấp cải thảo',20,[['Thịt heo xay',90],['Cải thảo',70]],{costTier:'thap',method:'steam',preparation:'steam',proteinGroup:'pork',allergens:[],tags:['Đạm','Dễ tiêu']}),
+  d('Gà kho gừng mềm',25,[['Ức gà hoặc đùi gà',120],['Gừng',6]],{costTier:'vua',method:'braise',preparation:'braise',proteinGroup:'chicken',allergens:[],tags:['Đạm nạc','Ấm bụng']}),
+  d('Gà xé trộn bắp cải',15,[['Ức gà hoặc đùi gà',100],['Bắp cải',80],['Chanh',5]],{costTier:'vua',method:'raw',preparation:'raw',proteinGroup:'chicken',allergens:[],tags:['Đạm nạc','Chất xơ']}),
+  d('Đậu hũ kho nấm',18,[['Đậu hũ',140],['Nấm rơm hoặc nấm bào ngư',70]],{veg:true,costTier:'thap',method:'braise',preparation:'braise',proteinGroup:'soy',allergens:['đậu nành'],tags:['Đạm thực vật','Dễ tiêu']}),
+  d('Trứng luộc sốt cà chua',15,[['Trứng gà',2,'quả'],['Cà chua',70]],{veg:true,costTier:'thap',method:'boil',preparation:'boil',proteinGroup:'egg',allergens:['trứng'],tags:['Đạm','Vitamin A']}),
 ];
 
 export const RAU: Dish[] = [
@@ -81,6 +144,13 @@ export const RAU: Dish[] = [
   d('Cà tím hấp',10,[['Cà tím',100]],{tags:['Chất xơ']}),
   d('Cà rốt luộc',8,[['Cà rốt',100]],{tags:['Vitamin A']}),
   d('Bầu luộc',8,[['Bầu',100]],{tags:['Thanh mát']}),
+  d('Bí xanh luộc gừng',10,[['Bí xanh',120],['Gừng',3]],{method:'boil',preparation:'boil',costTier:'thap',proteinGroup:'plant',allergens:[],tags:['Thanh mát','Dễ tiêu']}),
+  d('Rau ngót xào tỏi nhẹ',7,[['Rau ngót',100]],{method:'stirfry',preparation:'stirfry',costTier:'thap',proteinGroup:'plant',allergens:[],tags:['Sắt','Chất xơ']}),
+  d('Mồng tơi luộc',5,[['Mồng tơi',100]],{method:'boil',preparation:'boil',costTier:'thap',proteinGroup:'plant',allergens:[],tags:['Thanh mát','Chất xơ']}),
+  d('Cải thảo hấp gừng',8,[['Cải thảo',120],['Gừng',3]],{method:'steam',preparation:'steam',costTier:'thap',proteinGroup:'plant',allergens:[],tags:['Dễ tiêu','Vitamin C']}),
+  d('Bông cải xanh hấp cà rốt',10,[['Bông cải xanh',80],['Cà rốt',50]],{method:'steam',preparation:'steam',costTier:'thap',proteinGroup:'plant',allergens:[],tags:['Vitamin C','Vitamin A']}),
+  d('Đậu bắp luộc chấm chanh',8,[['Đậu bắp',120],['Chanh',5]],{method:'boil',preparation:'boil',costTier:'thap',proteinGroup:'plant',allergens:[],tags:['Chất xơ','Thanh nhẹ']}),
+  d('Su su xào cà rốt',10,[['Su su hoặc đậu que',100],['Cà rốt',40]],{method:'stirfry',preparation:'stirfry',costTier:'thap',proteinGroup:'plant',allergens:[],tags:['Chất xơ','Vitamin A']}),
 ];
 
 export const CANH: Dish[] = [
@@ -104,6 +174,16 @@ export const CANH: Dish[] = [
   d('Canh bí đỏ chay',10,[['Bí đỏ',100]],{veg:true}),
   d('Canh rau ngót chay',8,[['Rau ngót',70]],{veg:true}),
   d('Canh chua đậu hũ',12,[['Đậu hũ',80],['Cà chua',50]],{veg:true}),
+  d('Canh rau ngót nấu tôm',12,[['Rau ngót',70],['Tôm tươi',25]],{costTier:'vua',method:'soup',preparation:'soup',proteinGroup:'seafood',allergens:['tôm'],tags:['Sắt','Canxi']}),
+  d('Canh bầu thịt bằm',15,[['Bầu',80],['Thịt heo xay',25]],{costTier:'thap',method:'soup',preparation:'soup',proteinGroup:'pork',allergens:[],tags:['Thanh mát','Đạm']}),
+  d('Canh cải thảo nấu tôm',12,[['Cải thảo',80],['Tôm tươi',25]],{costTier:'vua',method:'soup',preparation:'soup',proteinGroup:'seafood',allergens:['tôm'],tags:['Canxi','Dễ tiêu']}),
+  d('Canh bí xanh nấu thịt viên',18,[['Bí xanh',80],['Thịt heo xay',30]],{costTier:'thap',method:'soup',preparation:'soup',proteinGroup:'pork',allergens:[],tags:['Thanh mát','Đạm']}),
+  d('Canh cà chua trứng rau ngót',12,[['Cà chua',50],['Trứng gà',.5,'quả'],['Rau ngót',40]],{veg:true,costTier:'thap',method:'soup',preparation:'soup',proteinGroup:'egg',allergens:['trứng'],tags:['Đạm','Sắt']}),
+  d('Canh nấm đậu hũ bí đỏ',15,[['Nấm rơm hoặc nấm bào ngư',50],['Đậu hũ',60],['Bí đỏ',40]],{veg:true,costTier:'thap',method:'soup',preparation:'soup',proteinGroup:'soy',allergens:['đậu nành'],tags:['Đạm thực vật','Dễ tiêu']}),
+  d('Canh mướp nấu thịt bằm',12,[['Mướp',80],['Thịt heo xay',25]],{costTier:'thap',method:'soup',preparation:'soup',proteinGroup:'pork',allergens:[],tags:['Thanh mát','Đạm']}),
+  d('Canh khoai sọ thịt bằm',20,[['Khoai sọ',70],['Thịt heo xay',25]],{costTier:'thap',method:'soup',preparation:'soup',proteinGroup:'pork',allergens:[],tags:['No lâu','Đạm']}),
+  d('Canh bông cải xanh đậu hũ',12,[['Bông cải xanh',70],['Đậu hũ',60]],{veg:true,costTier:'thap',method:'soup',preparation:'soup',proteinGroup:'soy',allergens:['đậu nành'],tags:['Canxi','Chất xơ']}),
+  d('Canh cá basa cà chua',18,[['Cá basa hoặc cá lóc phi lê',60],['Cà chua',50]],{costTier:'vua',method:'soup',preparation:'soup',proteinGroup:'fish',allergens:[],tags:['Omega-3','Ấm bụng']}),
 ];
 
 export const ALL_DISHES = [
