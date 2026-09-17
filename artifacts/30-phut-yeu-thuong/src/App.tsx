@@ -17,6 +17,10 @@ type DayPlan = { day: string; breakfast: Dish; lunch: MealSet; dinner: MealSet }
 type Aggregate = Record<string, { qty: number; unit?: string }>;
 type ProQr = { qrUrl: string; transferContent: string; amount: number };
 type AiUsage = { month: string; count: number };
+type InstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+};
 
 const initialPreferences: Preferences = { kids: 1, elderly: 0, adults: 2, maxTime: 30, budget: 'vua', veg: '0', allergies: [], allergyOther: '', favoriteIngredients: '' };
 const allergyOptions = [{ value: 'Tôm tươi', label: 'Hải sản' }, { value: 'Trứng gà', label: 'Trứng' }, { value: 'Sữa tươi không đường', label: 'Sữa' }, { value: 'Đậu phộng', label: 'Đậu phộng / hạt' }];
@@ -185,7 +189,49 @@ function Shell() {
     setUpgradeOpen(true);
   };
   const page = location === '/shopping' ? <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} setQuantityOverrides={setQuantityOverrides} /> : location === '/costs' ? <CostsPage shopping={shopping} prefs={prefs} totalCost={totalCost} plan={accessiblePlan} /> : location === '/ask-ai' ? <AskAiPageV2 prefs={prefs} isPro={isPro} onUpgrade={() => openUpgrade('ai_limit')} /> : <HomePage plan={plan} isPro={isPro} onUpgrade={() => openUpgrade('locked_week')} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} />;
-  return <div className="app-shell grain"><header className="content-wrap pt-5 md:pt-8"><div className="flex items-start justify-between gap-4"><Link href="/" className="flex items-center gap-3 no-underline" data-testid="link-home"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_5px_0_hsl(13_72%_43%)]"><ChefHat size={23} strokeWidth={2.4} /></span><span><span className="display-font block text-xl font-bold tracking-tight text-primary">30 Phút</span><span className="block text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">Yêu thương</span></span></Link><div className="top-actions flex items-center gap-2">{isPro ? <span className="inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-xs font-bold text-accent-foreground"><Crown size={13} /> Thành viên Pro</span> : <button onClick={() => openUpgrade('header')} className="tactile inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-2 text-xs font-bold text-primary-foreground" data-testid="button-header-upgrade"><Crown size={13} /> Nâng cấp Pro</button>}<button onClick={() => window.print()} className="tactile flex h-10 w-10 items-center justify-center rounded-full border bg-card text-muted-foreground" aria-label="In trang" data-testid="button-print"><Printer size={17} /></button></div></div></header><main className="content-wrap page-enter">{page}</main><BottomNav location={location} /><ProUpgradeModal open={upgradeOpen} onClose={() => setUpgradeOpen(false)} onUnlocked={unlockPro} /></div>;
+  return <div className="app-shell grain"><header className="content-wrap pt-5 md:pt-8"><div className="flex items-start justify-between gap-4"><Link href="/" className="flex items-center gap-3 no-underline" data-testid="link-home"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_5px_0_hsl(13_72%_43%)]"><ChefHat size={23} strokeWidth={2.4} /></span><span><span className="display-font block text-xl font-bold tracking-tight text-primary">30 Phút</span><span className="block text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">Yêu thương</span></span></Link><div className="top-actions flex items-center gap-2">{isPro ? <span className="inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-xs font-bold text-accent-foreground"><Crown size={13} /> Thành viên Pro</span> : <button onClick={() => openUpgrade('header')} className="tactile inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-2 text-xs font-bold text-primary-foreground" data-testid="button-header-upgrade"><Crown size={13} /> Nâng cấp Pro</button>}<button onClick={() => window.print()} className="tactile flex h-10 w-10 items-center justify-center rounded-full border bg-card text-muted-foreground" aria-label="In trang" data-testid="button-print"><Printer size={17} /></button></div></div></header><main className="content-wrap page-enter">{page}</main><BottomNav location={location} /><InstallAppBanner /><ProUpgradeModal open={upgradeOpen} onClose={() => setUpgradeOpen(false)} onUnlocked={unlockPro} /></div>;
+}
+
+function InstallAppBanner() {
+  const [visible, setVisible] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+
+  useEffect(() => {
+    const standalone = window.matchMedia('(display-mode: standalone)').matches
+      || ('standalone' in navigator && Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
+    if (standalone) return;
+
+    const onInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as InstallPromptEvent);
+    };
+    const timer = window.setTimeout(() => setVisible(true), 5_000);
+    window.addEventListener('beforeinstallprompt', onInstallPrompt);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('beforeinstallprompt', onInstallPrompt);
+    };
+  }, []);
+
+  if (!visible) return null;
+
+  const install = async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    if (choice.outcome === 'accepted') setVisible(false);
+    setInstallPrompt(null);
+  };
+
+  return <aside className="install-banner fixed inset-x-3 bottom-24 z-[60] mx-auto max-w-xl rounded-2xl border border-primary/25 bg-card/95 p-3 shadow-[0_16px_45px_rgba(69,38,16,.22)] backdrop-blur md:bottom-5" role="status" data-testid="pwa-install-banner">
+    <div className="flex items-center gap-3">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Smartphone size={19} /></span>
+      <p className="min-w-0 flex-1 text-xs font-bold leading-5">📲 Thêm 30 Phút Yêu Thương vào Màn hình chính để mở nhanh như App!</p>
+      {installPrompt && <button onClick={install} className="tactile shrink-0 rounded-xl bg-primary px-3 py-2 text-xs font-bold text-primary-foreground" data-testid="button-install-pwa">Thêm</button>}
+      <button onClick={() => setVisible(false)} className="shrink-0 rounded-full p-1.5 text-muted-foreground hover:bg-muted" aria-label="Đóng thông báo cài ứng dụng" data-testid="button-dismiss-pwa"><X size={16} /></button>
+    </div>
+    {!installPrompt && <p className="mt-1 pl-[52px] pr-8 text-[10px] leading-4 text-muted-foreground">Mở menu trình duyệt và chọn “Thêm vào Màn hình chính”.</p>}
+  </aside>;
 }
 
 function HomePage({ plan, isPro, onUpgrade, prefs, settingsOpen, setSettingsOpen, updatePrefs, saveSettings, regenerate, expandedDay, setExpandedDay, activeMeal, setActiveMeal, favoriteDishes, setFavoriteDishes }: { plan: DayPlan[]; isPro: boolean; onUpgrade: () => void; prefs: Preferences; settingsOpen: boolean; setSettingsOpen: (value: boolean) => void; updatePrefs: (value: Partial<Preferences>) => void; saveSettings: () => void; regenerate: () => void; expandedDay: number; setExpandedDay: (value: number) => void; activeMeal: 'all' | 'breakfast' | 'lunch' | 'dinner'; setActiveMeal: (value: 'all' | 'breakfast' | 'lunch' | 'dinner') => void; favoriteDishes: Set<string>; setFavoriteDishes: (value: Set<string>) => void }) {

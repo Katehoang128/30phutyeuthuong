@@ -15,3 +15,13 @@ createRoot(document.getElementById('root')!, {
     <App />
   </ErrorBoundary>,
 );
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}service-worker.js`, {
+      scope: import.meta.env.BASE_URL,
+    }).catch((error) => {
+      console.warn('Không thể bật chế độ offline:', error);
+    });
+  });
+}
