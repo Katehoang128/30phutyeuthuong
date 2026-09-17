@@ -40,6 +40,30 @@ function currentMonth() {
   return new Date().toISOString().slice(0, 7);
 }
 
+function vietnamDayName(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const value = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value || 0);
+  const dayIndex = new Date(Date.UTC(value('year'), value('month') - 1, value('day'))).getUTCDay();
+  return dayIndex === 0 ? 'Chủ nhật' : `Thứ ${dayIndex + 1}`;
+}
+
+function rotatePlanToToday(plan: DayPlan[]) {
+  const today = vietnamDayName();
+  const todayIndex = plan.findIndex((day) => day.day === today);
+  return todayIndex > 0 ? [...plan.slice(todayIndex), ...plan.slice(0, todayIndex)] : plan;
+}
+
+function orderedDayNames() {
+  const today = vietnamDayName();
+  const todayIndex = DAY_NAMES.indexOf(today);
+  return todayIndex > 0 ? [...DAY_NAMES.slice(todayIndex), ...DAY_NAMES.slice(0, todayIndex)] : DAY_NAMES;
+}
+
 function readStoredPreferences(): Preferences {
   try {
     const saved = JSON.parse(window.localStorage.getItem(PREFS_STORAGE_KEY) || 'null') as Partial<Preferences> | null;
@@ -52,7 +76,7 @@ function readStoredPreferences(): Preferences {
 function readStoredPlan(prefs: Preferences): DayPlan[] {
   try {
     const saved = JSON.parse(window.localStorage.getItem(PLAN_STORAGE_KEY) || 'null') as DayPlan[] | null;
-    return Array.isArray(saved) && saved.length === 7 ? saved : generatePlan(prefs);
+    return Array.isArray(saved) && saved.length === 7 ? rotatePlanToToday(saved) : generatePlan(prefs);
   } catch {
     return generatePlan(prefs);
   }
@@ -150,7 +174,7 @@ function generatePlan(p: Preferences, seed = 0): DayPlan[] {
   const rau = poolAllowed(RAU, p);
   const canh = poolAllowed(CANH, p);
   
-  const initialPlan = DAY_NAMES.map((day, index) => {
+  const initialPlan = orderedDayNames().map((day, index) => {
     const b = pick(breakfast, index + seed);
     const lunchDam = pick(dam, index * 2 + seed);
     const dinnerDam = pick(dam, index * 2 + 1 + seed, [lunchDam.name]);
@@ -514,6 +538,22 @@ function Shell() {
   useEffect(() => {
     window.localStorage.setItem(BOUGHT_STORAGE_KEY, JSON.stringify([...bought]));
   }, [bought]);
+  useEffect(() => {
+    const syncPlanWithVietnamDate = () => {
+      setPlan((current) => {
+        const rotated = rotatePlanToToday(current);
+        if (rotated[0]?.day === current[0]?.day) return current;
+        setExpandedDay(0);
+        return rotated;
+      });
+    };
+    const timer = window.setInterval(syncPlanWithVietnamDate, 30_000);
+    document.addEventListener('visibilitychange', syncPlanWithVietnamDate);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', syncPlanWithVietnamDate);
+    };
+  }, []);
   const regenerate = () => { const nextSeed = seed + 1; setSeed(nextSeed); setPlan(generatePlan(prefs, nextSeed)); setBought(new Set()); setQuantityOverrides({}); trackEvent('menu_regenerated', { membership: isPro ? 'pro' : 'free' }); };
   const updatePrefs = (next: Partial<Preferences>) => setPrefs((current) => ({ ...current, ...next }));
   const saveSettings = () => { setPlan(generatePlan(prefs, seed + 1)); setSeed(seed + 1); setSettingsOpen(false); setBought(new Set()); setQuantityOverrides({}); setBudgetNotice(''); };
