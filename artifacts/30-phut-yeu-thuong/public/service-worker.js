@@ -1,4 +1,4 @@
-const CACHE_VERSION = '30-phut-yeu-thuong-v2';
+const CACHE_VERSION = '30-phut-yeu-thuong-v3';
 const APP_SHELL = ['./', './manifest.json', './icons/icon-192.png', './icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {

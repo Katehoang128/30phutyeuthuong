@@ -11,7 +11,8 @@ import { trackEvent } from './analytics';
 const queryClient = new QueryClient();
 type Budget = 'tietkiem' | 'vua' | 'thoaimai';
 type VegMode = '0' | '1' | '2';
-type Preferences = { kids: number; elderly: number; adults: number; maxTime: number; budget: Budget; targetBudget: number; veg: VegMode; allergies: string[]; allergyOther: string; favoriteIngredients: string; };
+type HealingMode = 'stress' | 'hormone' | 'realfood';
+type Preferences = { kids: number; elderly: number; adults: number; maxTime: number; budget: Budget; targetBudget: number; veg: VegMode; healingModes: HealingMode[]; allergies: string[]; allergyOther: string; favoriteIngredients: string; };
 type MealSet = { dam: Dish; rau: Dish; canh: Dish };
 type DayPlan = { day: string; breakfast: Dish; lunch: MealSet; dinner: MealSet };
 type Aggregate = Record<string, { qty: number; unit?: string }>;
@@ -22,7 +23,7 @@ type InstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 };
 
-const initialPreferences: Preferences = { kids: 1, elderly: 0, adults: 2, maxTime: 30, budget: 'vua', targetBudget: 1200000, veg: '0', allergies: [], allergyOther: '', favoriteIngredients: '' };
+const initialPreferences: Preferences = { kids: 1, elderly: 0, adults: 2, maxTime: 30, budget: 'vua', targetBudget: 1200000, veg: '0', healingModes: [], allergies: [], allergyOther: '', favoriteIngredients: '' };
 const allergyOptions = [{ value: 'Tôm tươi', label: 'Hải sản' }, { value: 'Trứng gà', label: 'Trứng' }, { value: 'Sữa tươi không đường', label: 'Sữa' }, { value: 'Đậu phộng', label: 'Đậu phộng / hạt' }];
 const budgetLabels: Record<Budget, string> = { tietkiem: 'Tiết kiệm', vua: 'Vừa phải', thoaimai: 'Thoải mái' };
 const FREE_DAY_LIMIT = 3;
@@ -91,6 +92,23 @@ function nutrition(dish: Dish) {
     return { cal: total.cal + item.cal * factor, protein: total.protein + item.pro * factor };
   }, { cal: 0, protein: 0 });
 }
+const REAL_FOOD_BLOCKED_METHODS = new Set(['readymade', 'friedegg', 'panfry', 'stirfry', 'airfry']);
+const REAL_FOOD_BLOCKED_INGREDIENTS = ['Chả lụa', 'Chả cá', 'Bánh cuốn'];
+const HEALING_MODE_TERMS: Record<Exclude<HealingMode, 'realfood'>, string[]> = {
+  stress: ['omega-3', 'dha', 'ca hoi', 'ca basa', 'ca loc', 'yen mach', 'dau xanh', 'cai bo xoi', 'rau den', 'rau muong', 'rau lang', 'bong cai', 'nam'],
+  hormone: ['dau hu', 'dau xanh', 'bong cai', 'bap cai', 'cai thao', 'cai bo xoi', 'rau den', 'nam'],
+};
+function healingScore(dish: Dish, p: Preferences) {
+  const text = normalize(`${dish.name} ${(dish.tags || []).join(' ')} ${dish.ing.map((item) => item[0]).join(' ')}`);
+  let score = 0;
+  if (p.healingModes.includes('stress')) score += HEALING_MODE_TERMS.stress.reduce((sum, term) => sum + (text.includes(term) ? 6 : 0), 0);
+  if (p.healingModes.includes('hormone')) score += HEALING_MODE_TERMS.hormone.reduce((sum, term) => sum + (text.includes(term) ? 6 : 0), 0);
+  if (p.healingModes.includes('realfood')) {
+    if (!dish.method || ['boilsteam', 'porridge', 'soak', 'nocook', 'oatsoup', 'phobun'].includes(dish.method)) score += 8;
+    if (dish.veg) score += 2;
+  }
+  return score;
+}
 function poolAllowed(pool: Dish[], p: Preferences) {
   const blocked = [...p.allergies, ...p.allergyOther.split(',').map((x) => x.trim()).filter(Boolean)].map(normalize);
   const favorites = p.favoriteIngredients.split(',').map((x) => normalize(x.trim())).filter(Boolean);
@@ -101,12 +119,17 @@ function poolAllowed(pool: Dish[], p: Preferences) {
     if (dish.time > p.maxTime && dish !== BREAKFAST[0]) return false;
     if ((dish.costTier === 'cao' ? 3 : dish.costTier === 'vua' ? 2 : 1) > maxCost) return false;
     if (p.veg === '2' && !dish.veg) return false;
+    if (p.healingModes.includes('realfood') && (REAL_FOOD_BLOCKED_METHODS.has(dish.method || '') || dish.ing.some(([name]) => REAL_FOOD_BLOCKED_INGREDIENTS.includes(name)))) return false;
     return true;
   });
-  return result.length ? result.sort((a, b) => {
-    const score = (dish: Dish) => favorites.reduce((sum, term) => sum + (normalize(`${dish.name} ${dish.ing.map((x) => x[0]).join(' ')}`).includes(term) ? 4 : 0), 0);
+  if (!result.length) return pool;
+  const sorted = result.sort((a, b) => {
+    const score = (dish: Dish) => healingScore(dish, p) + favorites.reduce((sum, term) => sum + (normalize(`${dish.name} ${dish.ing.map((x) => x[0]).join(' ')}`).includes(term) ? 4 : 0), 0);
     return score(b) - score(a);
-  }) : pool;
+  });
+  if (p.healingModes.length === 0) return sorted;
+  const preferred = sorted.filter((dish) => healingScore(dish, p) > 0);
+  return preferred.length >= 3 ? preferred : sorted.slice(0, Math.max(3, Math.ceil(sorted.length / 2)));
 }
 function pick(pool: Dish[], index: number, avoid: string[] = []) {
   const options = pool.filter((dish) => !avoid.includes(dish.name));
@@ -597,6 +620,27 @@ function InstallAppBanner() {
   </aside>;
 }
 
+const healingModeOptions: { value: HealingMode; icon: string; title: string; description: string }[] = [
+  { value: 'stress', icon: '🌿', title: 'Chữa lành tâm trí & Giảm stress', description: 'Ưu tiên Magnesium, B-complex và Omega-3 từ rau xanh đậm, yến mạch, đậu và cá.' },
+  { value: 'hormone', icon: '🌸', title: 'Cân bằng nội tiết tố U40–U50', description: 'Ưu tiên phytoestrogen tự nhiên từ đậu hũ, đậu, rau họ cải và rau xanh.' },
+  { value: 'realfood', icon: '🧘', title: 'Real Food & Thực dưỡng nhàn bếp', description: 'Nguyên liệu nguyên bản; hạn chế đồ chế biến sẵn, chiên và xào; ưu tiên hấp, luộc, cháo và canh.' },
+];
+
+function HealingModeSettings({ prefs, updatePrefs, saveSettings }: { prefs: Preferences; updatePrefs: (value: Partial<Preferences>) => void; saveSettings: () => void }) {
+  const toggle = (mode: HealingMode) => updatePrefs({
+    healingModes: prefs.healingModes.includes(mode) ? prefs.healingModes.filter((item) => item !== mode) : [...prefs.healingModes, mode],
+  });
+  return <section className="paper-card border-[hsl(105_40%_75%)] bg-[linear-gradient(145deg,hsl(103_40%_97%),hsl(39_67%_98%))] p-4 md:p-5" data-testid="healing-mode-settings">
+    <div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[hsl(103_40%_90%)] text-xl">🌿</span><div><p className="text-[10px] font-bold uppercase tracking-[.15em] text-[hsl(105_33%_30%)]">Chế độ ăn chuyên sâu</p><h2 className="display-font mt-1 text-2xl font-bold">Bếp Chữa Lành & Năng Lượng</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Có thể chọn nhiều chế độ. Bếp sẽ kết hợp các ưu tiên khi tạo thực đơn mới.</p></div></div>
+    <div className="mt-4 grid gap-3">{healingModeOptions.map((option) => { const active = prefs.healingModes.includes(option.value); return <label key={option.value} className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-3.5 transition-colors ${active ? 'border-[hsl(105_40%_45%)] bg-white shadow-sm' : 'bg-white/55 hover:bg-white'}`} data-testid={`label-healing-${option.value}`}><input type="checkbox" checked={active} onChange={() => toggle(option.value)} className="mt-1 h-4 w-4 accent-[hsl(105_40%_40%)]" data-testid={`checkbox-healing-${option.value}`} /><span className="text-lg" aria-hidden="true">{option.icon}</span><span><span className="block text-sm font-bold leading-5">{option.title}</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">{option.description}</span></span></label>; })}</div>
+    <button onClick={saveSettings} className="tactile mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(105_40%_40%)] px-4 py-3 text-sm font-bold text-white shadow-[0_4px_0_hsl(105_40%_30%)]" data-testid="button-save-healing-modes"><Sparkles size={16} /> Áp dụng và tạo thực đơn chữa lành</button>
+  </section>;
+}
+
+function MindfulKitchenMessage() {
+  return <aside className="rounded-2xl border border-[hsl(105_40%_75%)] bg-[hsl(103_40%_96%)] px-4 py-3.5 shadow-[0_8px_22px_rgba(71,105,45,.07)]" data-testid="mindful-kitchen-message"><p className="text-sm leading-6 text-[hsl(105_33%_25%)]"><strong>🌿 Hít một hơi thật sâu chị nhé!</strong> 30 phút tới là khoảng thời gian thiền bếp dành riêng cho chị. Hãy thả lỏng đôi vai, cảm nhận mùi thơm tự nhiên và nuôi dưỡng sức khỏe gia đình.</p></aside>;
+}
+
 function HomePage({ plan, isPro, onUpgrade, prefs, settingsOpen, setSettingsOpen, updatePrefs, saveSettings, regenerate, expandedDay, setExpandedDay, activeMeal, setActiveMeal, favoriteDishes, setFavoriteDishes, totalCost, forceBudget, budgetNotice }: { plan: DayPlan[]; isPro: boolean; onUpgrade: () => void; prefs: Preferences; settingsOpen: boolean; setSettingsOpen: (value: boolean) => void; updatePrefs: (value: Partial<Preferences>) => void; saveSettings: () => void; regenerate: () => void; expandedDay: number; setExpandedDay: (value: number) => void; activeMeal: 'all' | 'breakfast' | 'lunch' | 'dinner'; setActiveMeal: (value: 'all' | 'breakfast' | 'lunch' | 'dinner') => void; favoriteDishes: Set<string>; setFavoriteDishes: (value: Set<string>) => void; totalCost: number; forceBudget: () => void; budgetNotice: string }) {
   const today = plan[0];
   const household = `${prefs.kids + prefs.elderly + prefs.adults} người`;
@@ -605,6 +649,8 @@ function HomePage({ plan, isPro, onUpgrade, prefs, settingsOpen, setSettingsOpen
   return <div className="space-y-5 pb-5">
     <section className="relative overflow-hidden rounded-[28px] border border-[hsl(36_70%_82%)] bg-[linear-gradient(135deg,hsl(41_100%_91%),hsl(12_100%_93%)_55%,hsl(103_40%_90%))] px-5 py-6 shadow-[0_15px_35px_rgba(112,64,25,.08)] md:px-9 md:py-9"><div className="absolute -right-12 -top-16 h-44 w-44 rounded-full border-[18px] border-[hsl(43_100%_61%/.3)]" /><div className="relative max-w-2xl"><p className="mb-2 text-xs font-bold uppercase tracking-[.19em] text-[hsl(105_33%_30%)]">Bữa cơm hôm nay</p><h1 className="display-font max-w-xl text-[clamp(2.15rem,7vw,4.2rem)] font-bold leading-[.98] tracking-[-.04em] text-[hsl(13_72%_38%)]">Nấu nhanh một chút,<br /><span className="text-[hsl(105_33%_30%)]">thương nhau nhiều hơn.</span></h1><p className="mt-4 max-w-lg text-sm leading-6 text-muted-foreground">Một tuần đủ chất, vừa túi tiền và không làm bạn phải đứng bếp cả tối.</p><div className="mt-5 flex flex-wrap items-center gap-2"><span className="inline-flex items-center gap-1.5 rounded-full bg-card/80 px-3 py-2 text-xs font-bold text-foreground"><Users size={14} className="text-primary" /> {household}</span><span className="inline-flex items-center gap-1.5 rounded-full bg-card/80 px-3 py-2 text-xs font-bold text-foreground"><Clock3 size={14} className="text-[hsl(105_33%_30%)]" /> {prefs.maxTime} phút / bữa</span><span className="inline-flex items-center gap-1.5 rounded-full bg-card/80 px-3 py-2 text-xs font-bold text-foreground"><Leaf size={14} className="text-[hsl(105_33%_30%)]" /> {budgetLabels[prefs.budget]}</span></div></div></section>
     <SettingsPanel open={settingsOpen} setOpen={setSettingsOpen} prefs={prefs} updatePrefs={updatePrefs} saveSettings={saveSettings} />
+    {settingsOpen && <HealingModeSettings prefs={prefs} updatePrefs={updatePrefs} saveSettings={saveSettings} />}
+    <MindfulKitchenMessage />
     <section className="grid gap-5 lg:grid-cols-[1.15fr_.85fr]">
       <div className="min-w-0 space-y-4"><div className="flex items-end justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-primary">{isPro ? 'Trọn tuần' : 'Gói miễn phí · 3 ngày đầu'}</p><h2 className="display-font mt-1 text-3xl font-bold tracking-tight">Mình ăn gì nhỉ?</h2></div><button onClick={regenerate} className="tactile inline-flex items-center gap-2 rounded-full border border-primary/30 bg-card px-3.5 py-2 text-xs font-bold text-primary" data-testid="button-regenerate"><RefreshCw size={14} /> Đổi tuần khác</button></div><div className="flex max-w-full gap-2 overflow-x-auto pb-1" role="tablist">{[['all','Tất cả'],['breakfast','Bữa sáng'],['lunch','Bữa trưa'],['dinner','Bữa tối']].map(([value,label]) => <button key={value} onClick={() => setActiveMeal(value as typeof activeMeal)} className={`whitespace-nowrap rounded-full px-4 py-2 text-xs font-bold transition-colors ${activeMeal === value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}`} data-testid={`button-filter-${value}`}>{label}</button>)}</div><BudgetWarning plan={plan} units={units} p={prefs} totalCost={totalCost} forceBudget={forceBudget} />{budgetNotice && <p className="rounded-xl border border-amber-400/40 bg-amber-50 p-3 text-xs font-bold leading-5 text-amber-800" role="status" data-testid="budget-infeasible-notice">{budgetNotice}</p>}{visiblePlan.map((day, index) => <DayCard key={day.day} day={day} index={index} open={expandedDay === index} setOpen={() => setExpandedDay(expandedDay === index ? -1 : index)} activeMeal={activeMeal} favorites={favoriteDishes} setFavorites={setFavoriteDishes} />)}{!isPro && <LockedWeekBanner onUpgrade={onUpgrade} />}</div>
       <aside className="space-y-4"><div className="paper-card p-5"><h3 className="text-sm font-bold flex items-center gap-2 mb-4"><WalletCards size={17} className="text-primary" /> Ngân sách tuần này</h3><BudgetProgress totalCost={totalCost} targetBudget={prefs.targetBudget || 1200000} /></div><TodayCard day={today} prefs={prefs} /><NutritionCard plan={visiblePlan} prefs={prefs} /><NewsletterSignup /><div className="paper-card hidden overflow-hidden p-5 md:block"><div className="flex items-center gap-2 text-sm font-bold"><Sparkles size={17} className="text-primary" /> Mẹo để bếp nhẹ tênh</div><p className="mt-3 text-sm leading-6 text-muted-foreground">Sơ chế hành, gừng và rau củ ngay sau khi đi chợ. Đến bữa chỉ cần mở nồi hấp — 30 phút đủ cho cả nhà ngồi vào mâm.</p></div></aside>
