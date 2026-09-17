@@ -1,0 +1,1 @@
+- [Ưu tiên dinh dưỡng khi tối ưu ngân sách](budget-nutrition-priority.md) — nếu mục tiêu tiền quá thấp, giữ chuẩn calo/đạm và giải thích phần vượt thay vì giảm dinh dưỡng âm thầm.

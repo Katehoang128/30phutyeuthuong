@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Link, Router as WouterRouter, useLocation } from 'wouter';
 import { AlertCircle, ArrowUpRight, BadgeCheck, BookOpen, Camera, Check, ChefHat, ChevronDown, ChevronUp, CircleHelp, Clock3, Copy, Crown, ExternalLink, Heart, ImagePlus, Leaf, LoaderCircle, LockKeyhole, Mail, MessageCircle, Plus, Printer, QrCode, RefreshCw, Search, Send, Share2, ShoppingBasket, SlidersHorizontal, Smartphone, Sparkles, Trash2, Upload, Users, Utensils, WalletCards, X } from 'lucide-react';
@@ -11,7 +11,7 @@ import { trackEvent } from './analytics';
 const queryClient = new QueryClient();
 type Budget = 'tietkiem' | 'vua' | 'thoaimai';
 type VegMode = '0' | '1' | '2';
-type Preferences = { kids: number; elderly: number; adults: number; maxTime: number; budget: Budget; veg: VegMode; allergies: string[]; allergyOther: string; favoriteIngredients: string; };
+type Preferences = { kids: number; elderly: number; adults: number; maxTime: number; budget: Budget; targetBudget: number; veg: VegMode; allergies: string[]; allergyOther: string; favoriteIngredients: string; };
 type MealSet = { dam: Dish; rau: Dish; canh: Dish };
 type DayPlan = { day: string; breakfast: Dish; lunch: MealSet; dinner: MealSet };
 type Aggregate = Record<string, { qty: number; unit?: string }>;
@@ -22,7 +22,7 @@ type InstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 };
 
-const initialPreferences: Preferences = { kids: 1, elderly: 0, adults: 2, maxTime: 30, budget: 'vua', veg: '0', allergies: [], allergyOther: '', favoriteIngredients: '' };
+const initialPreferences: Preferences = { kids: 1, elderly: 0, adults: 2, maxTime: 30, budget: 'vua', targetBudget: 1200000, veg: '0', allergies: [], allergyOther: '', favoriteIngredients: '' };
 const allergyOptions = [{ value: 'Tôm tươi', label: 'Hải sản' }, { value: 'Trứng gà', label: 'Trứng' }, { value: 'Sữa tươi không đường', label: 'Sữa' }, { value: 'Đậu phộng', label: 'Đậu phộng / hạt' }];
 const budgetLabels: Record<Budget, string> = { tietkiem: 'Tiết kiệm', vua: 'Vừa phải', thoaimai: 'Thoải mái' };
 const FREE_DAY_LIMIT = 3;
@@ -31,9 +31,30 @@ const PRO_PRICE = 49_000;
 const PRO_STORAGE_KEY = '30phut-pro-unlocked';
 const AI_USAGE_STORAGE_KEY = '30phut-ai-usage';
 const NEWSLETTER_STORAGE_KEY = '30phut-newsletter-email';
+const PREFS_STORAGE_KEY = '30phut-preferences';
+const PLAN_STORAGE_KEY = '30phut-plan';
+const BOUGHT_STORAGE_KEY = '30phut-bought';
 
 function currentMonth() {
   return new Date().toISOString().slice(0, 7);
+}
+
+function readStoredPreferences(): Preferences {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(PREFS_STORAGE_KEY) || 'null') as Partial<Preferences> | null;
+    return saved ? { ...initialPreferences, ...saved } : initialPreferences;
+  } catch {
+    return initialPreferences;
+  }
+}
+
+function readStoredPlan(prefs: Preferences): DayPlan[] {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(PLAN_STORAGE_KEY) || 'null') as DayPlan[] | null;
+    return Array.isArray(saved) && saved.length === 7 ? saved : generatePlan(prefs);
+  } catch {
+    return generatePlan(prefs);
+  }
 }
 
 function readAiUsage(): AiUsage {
@@ -91,12 +112,22 @@ function pick(pool: Dish[], index: number, avoid: string[] = []) {
   const options = pool.filter((dish) => !avoid.includes(dish.name));
   return (options.length ? options : pool)[index % (options.length || pool.length)];
 }
+function dishCost(dish: Dish, units: number) {
+  return dish.ing.reduce((sum, [name, qty]) => sum + priceFor(name, qty * units), 0);
+}
+function aggregateCost(plan: DayPlan[], units: number, p: Preferences) {
+  const agg = aggregate(plan, units);
+  let sum = 0;
+  for (const [name, item] of Object.entries(agg)) sum += priceFor(name, item.qty);
+  return sum + PANTRY_COST[p.budget];
+}
 function generatePlan(p: Preferences, seed = 0): DayPlan[] {
   const breakfast = poolAllowed(BREAKFAST, p);
   const dam = poolAllowed(DAM, p);
   const rau = poolAllowed(RAU, p);
   const canh = poolAllowed(CANH, p);
-  return DAY_NAMES.map((day, index) => {
+  
+  const initialPlan = DAY_NAMES.map((day, index) => {
     const b = pick(breakfast, index + seed);
     const lunchDam = pick(dam, index * 2 + seed);
     const dinnerDam = pick(dam, index * 2 + 1 + seed, [lunchDam.name]);
@@ -106,6 +137,177 @@ function generatePlan(p: Preferences, seed = 0): DayPlan[] {
     const dinnerCanh = pick(canh, index + 1 + seed, [lunchCanh.name]);
     return { day, breakfast: b, lunch: { dam: lunchDam, rau: lunchRau, canh: lunchCanh }, dinner: { dam: dinnerDam, rau: dinnerRau, canh: dinnerCanh } };
   });
+
+  const target = p.targetBudget || 1200000;
+  const units = unitsOf(p);
+  let currentCost = aggregateCost(initialPlan, units, p);
+  let plan = initialPlan.map(day => ({ ...day, lunch: { ...day.lunch }, dinner: { ...day.dinner } }));
+  
+  const pools = { breakfast, dam, rau, canh };
+  const nutritionTarget = {
+    cal: (p.kids * DAILY_TARGET.kid.calories + p.elderly * DAILY_TARGET.elderly.calories + p.adults * DAILY_TARGET.adult.calories) * 7,
+    protein: (p.kids * DAILY_TARGET.kid.protein + p.elderly * DAILY_TARGET.elderly.protein + p.adults * DAILY_TARGET.adult.protein) * 7,
+  };
+  const nutritionTotals = () => plan.reduce((sum, day) => {
+    const value = mealCalories(day);
+    return { cal: sum.cal + value.cal * units, protein: sum.protein + value.protein * units };
+  }, { cal: 0, protein: 0 });
+  let currentNutrition = nutritionTotals();
+  let nutritionIterations = 0;
+  while ((currentNutrition.cal < nutritionTarget.cal || currentNutrition.protein < nutritionTarget.protein) && nutritionIterations < 60) {
+    nutritionIterations++;
+    let best: { dayIdx: number; key: string; candidate: Dish; score: number } | null = null;
+    for (let dayIdx = 0; dayIdx < plan.length; dayIdx++) {
+      const day = plan[dayIdx];
+      const slots = [
+        { key: 'breakfast', dish: day.breakfast, pool: breakfast },
+        { key: 'lunch.dam', dish: day.lunch.dam, pool: dam },
+        { key: 'lunch.rau', dish: day.lunch.rau, pool: rau },
+        { key: 'lunch.canh', dish: day.lunch.canh, pool: canh },
+        { key: 'dinner.dam', dish: day.dinner.dam, pool: dam },
+        { key: 'dinner.rau', dish: day.dinner.rau, pool: rau },
+        { key: 'dinner.canh', dish: day.dinner.canh, pool: canh },
+      ];
+      for (const slot of slots) {
+        const old = nutrition(slot.dish);
+        for (const candidate of slot.pool) {
+          if (candidate.name === slot.dish.name) continue;
+          const next = nutrition(candidate);
+          const calGain = (next.cal - old.cal) * units;
+          const proteinGain = (next.protein - old.protein) * units;
+          if (currentNutrition.cal >= nutritionTarget.cal && currentNutrition.cal + calGain < nutritionTarget.cal) continue;
+          if (currentNutrition.protein >= nutritionTarget.protein && currentNutrition.protein + proteinGain < nutritionTarget.protein) continue;
+          const score = Math.max(0, Math.min(calGain, nutritionTarget.cal - currentNutrition.cal)) / Math.max(1, nutritionTarget.cal)
+            + Math.max(0, Math.min(proteinGain, nutritionTarget.protein - currentNutrition.protein)) / Math.max(1, nutritionTarget.protein);
+          if (score > 0 && (!best || score > best.score)) best = { dayIdx, key: slot.key, candidate, score };
+        }
+      }
+    }
+    if (!best) break;
+    const day = plan[best.dayIdx];
+    const [group, field] = best.key.split('.');
+    if (group === 'breakfast') day.breakfast = best.candidate;
+    else if (group === 'lunch') day.lunch[field as keyof MealSet] = best.candidate;
+    else day.dinner[field as keyof MealSet] = best.candidate;
+    currentNutrition = nutritionTotals();
+    currentCost = aggregateCost(plan, units, p);
+  }
+  const countUsage = (dishName: string) => {
+    let c = 0;
+    plan.forEach((d) => {
+      if (d.breakfast.name === dishName) c++;
+      if (d.lunch.dam.name === dishName) c++;
+      if (d.lunch.rau.name === dishName) c++;
+      if (d.lunch.canh.name === dishName) c++;
+      if (d.dinner.dam.name === dishName) c++;
+      if (d.dinner.rau.name === dishName) c++;
+      if (d.dinner.canh.name === dishName) c++;
+    });
+    return c;
+  };
+
+  let iterations = 0;
+  while (currentCost > target && iterations < 50) {
+    iterations++;
+    let bestSwap: { dayIdx: number; key: string; candidate: Dish; reduction: number } | null = null;
+    let maxScore = -999999;
+
+    for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
+      const day = plan[dayIdx];
+      const mealTypes = [
+        { key: 'breakfast', dish: day.breakfast, pool: pools.breakfast },
+        { key: 'lunch.dam', dish: day.lunch.dam, pool: pools.dam },
+        { key: 'lunch.rau', dish: day.lunch.rau, pool: pools.rau },
+        { key: 'lunch.canh', dish: day.lunch.canh, pool: pools.canh },
+        { key: 'dinner.dam', dish: day.dinner.dam, pool: pools.dam },
+        { key: 'dinner.rau', dish: day.dinner.rau, pool: pools.rau },
+        { key: 'dinner.canh', dish: day.dinner.canh, pool: pools.canh },
+      ];
+
+      for (const mt of mealTypes) {
+        const currentDishCost = dishCost(mt.dish, units);
+        for (const candidate of mt.pool) {
+          const candidateCost = dishCost(candidate, units);
+          const reduction = currentDishCost - candidateCost;
+          if (reduction > 0) {
+            const oldNutrition = nutrition(mt.dish);
+            const newNutrition = nutrition(candidate);
+            const nextCal = currentNutrition.cal + (newNutrition.cal - oldNutrition.cal) * units;
+            const nextProtein = currentNutrition.protein + (newNutrition.protein - oldNutrition.protein) * units;
+            if (nextCal < nutritionTarget.cal || nextProtein < nutritionTarget.protein) continue;
+            const penalty = countUsage(candidate.name) * 15000;
+            const score = reduction - penalty;
+            if (score > maxScore) {
+              maxScore = score;
+              bestSwap = { dayIdx, key: mt.key, candidate, reduction };
+            }
+          }
+        }
+      }
+    }
+
+    if (!bestSwap || maxScore < -50000) break;
+
+    const day = plan[bestSwap.dayIdx];
+    const keys = bestSwap.key.split('.');
+    if (keys.length === 1) (day as any)[keys[0]] = bestSwap.candidate;
+    else ((day as any)[keys[0]])[keys[1]] = bestSwap.candidate;
+
+    currentCost -= bestSwap.reduction;
+    currentNutrition = nutritionTotals();
+  }
+
+  let upgradeIterations = 0;
+  while (currentCost < target - 30000 && upgradeIterations < 50) {
+    upgradeIterations++;
+    let bestSwap: { dayIdx: number; key: string; candidate: Dish; costIncrease: number } | null = null;
+    let maxScore = -999999;
+
+    for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
+      const day = plan[dayIdx];
+      const mealTypes = [
+        { key: 'breakfast', dish: day.breakfast, pool: pools.breakfast },
+        { key: 'lunch.dam', dish: day.lunch.dam, pool: pools.dam },
+        { key: 'lunch.rau', dish: day.lunch.rau, pool: pools.rau },
+        { key: 'lunch.canh', dish: day.lunch.canh, pool: pools.canh },
+        { key: 'dinner.dam', dish: day.dinner.dam, pool: pools.dam },
+        { key: 'dinner.rau', dish: day.dinner.rau, pool: pools.rau },
+        { key: 'dinner.canh', dish: day.dinner.canh, pool: pools.canh },
+      ];
+
+      for (const mt of mealTypes) {
+        const currentDishCost = dishCost(mt.dish, units);
+        const currentPro = nutrition(mt.dish).protein;
+        for (const candidate of mt.pool) {
+          const candidateCost = dishCost(candidate, units);
+          const costIncrease = candidateCost - currentDishCost;
+          
+          if (costIncrease > 0 && currentCost + costIncrease <= target) {
+            const candidatePro = nutrition(candidate).protein;
+            const proIncrease = candidatePro - currentPro;
+            const penalty = countUsage(candidate.name) * 20000;
+            const score = costIncrease + (proIncrease * 1000) - penalty; 
+            
+            if (score > maxScore) {
+              maxScore = score;
+              bestSwap = { dayIdx, key: mt.key, candidate, costIncrease };
+            }
+          }
+        }
+      }
+    }
+
+    if (!bestSwap || maxScore < -50000) break;
+
+    const day = plan[bestSwap.dayIdx];
+    const keys = bestSwap.key.split('.');
+    if (keys.length === 1) (day as any)[keys[0]] = bestSwap.candidate;
+    else ((day as any)[keys[0]])[keys[1]] = bestSwap.candidate;
+
+    currentCost += bestSwap.costIncrease;
+  }
+
+  return plan;
 }
 function aggregate(plan: DayPlan[], units: number): Aggregate {
   const result: Aggregate = {};
@@ -147,22 +349,127 @@ function quantityEditorValue(value: { qty: number; unit?: string }) {
   return Number.isInteger(value.qty) ? value.qty : Number(value.qty.toFixed(1));
 }
 
+function BudgetProgress({ totalCost, targetBudget, className = "" }: { totalCost: number, targetBudget: number, className?: string }) {
+  const percent = targetBudget > 0 ? (totalCost / targetBudget) * 100 : 0;
+  const isOver = totalCost > targetBudget;
+  const colorClass = isOver ? 'bg-destructive' : percent >= 90 ? 'bg-amber-400' : 'bg-[hsl(105_40%_45%)]';
+  
+  return (
+    <div className={`space-y-3 ${className}`} data-testid="budget-progress">
+      <div className="flex justify-between text-xs">
+        <span className="font-bold text-muted-foreground">Đã chi: <span className="text-foreground">{money(totalCost)}</span></span>
+        <span className="font-bold text-muted-foreground">Mục tiêu: <span className="text-foreground">{money(targetBudget)}</span></span>
+      </div>
+      <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
+        <div className={`h-full ${colorClass} transition-all duration-500`} style={{ width: `${Math.min(100, percent)}%` }} />
+      </div>
+      <div className="flex justify-end text-[11px] font-bold">
+        {isOver ? (
+          <span className="text-destructive flex items-center gap-1"><AlertCircle size={13} /> Vượt ngân sách: {money(totalCost - targetBudget)}</span>
+        ) : (
+          <span className="text-[hsl(105_40%_45%)] flex items-center gap-1"><Check size={13} /> Còn trống: {money(targetBudget - totalCost)}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BudgetWarning({ plan, units, p, totalCost, forceBudget }: { plan: DayPlan[], units: number, p: Preferences, totalCost: number, forceBudget: () => void }) {
+  const target = p.targetBudget || 1200000;
+  
+  const swaps = useMemo(() => {
+    if (totalCost <= target) return [];
+    const cheapPool = poolAllowed(DAM, p).filter(d => ['Đậu hũ', 'Trứng gà', 'Cá basa', 'Ức gà'].some(ing => d.ing.some(i => i[0].includes(ing))));
+    const expensiveDams: { dayIdx: number, meal: 'lunch' | 'dinner', dish: Dish, cost: number }[] = [];
+    plan.forEach((day, i) => {
+      expensiveDams.push({ dayIdx: i, meal: 'lunch', dish: day.lunch.dam, cost: dishCost(day.lunch.dam, units) });
+      expensiveDams.push({ dayIdx: i, meal: 'dinner', dish: day.dinner.dam, cost: dishCost(day.dinner.dam, units) });
+    });
+    
+    expensiveDams.sort((a, b) => b.cost - a.cost);
+    
+    const result = [];
+    for (const exp of expensiveDams) {
+      if (result.length >= 3) break;
+      const expPro = nutrition(exp.dish).protein;
+      let bestCheap = null;
+      let bestScore = -999999;
+      for (const cheap of cheapPool) {
+        if (cheap.name === exp.dish.name) continue;
+        const cCost = dishCost(cheap, units);
+        if (cCost < exp.cost - 5000) {
+          const cPro = nutrition(cheap).protein;
+          const score = (exp.cost - cCost) - Math.abs(expPro - cPro) * 500;
+          if (score > bestScore) {
+            bestScore = score;
+            bestCheap = cheap;
+          }
+        }
+      }
+      if (bestCheap) {
+        result.push({ oldDish: exp.dish, newDish: bestCheap, saving: exp.cost - dishCost(bestCheap, units) });
+      }
+    }
+    return result;
+  }, [plan, units, p, totalCost, target]);
+
+  if (totalCost <= target || swaps.length === 0) return null;
+
+  return (
+    <div className="mb-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4" data-testid="budget-warning">
+      <div className="flex items-start gap-3">
+        <AlertCircle className="mt-0.5 text-amber-600 shrink-0" size={18} />
+        <div className="flex-1">
+          <h4 className="text-sm font-bold text-amber-800 dark:text-amber-500">Gợi ý giảm chi phí ({money(totalCost - target)} vượt ngân sách)</h4>
+          <p className="mt-1 text-xs leading-5 text-amber-700/80 dark:text-amber-500/80">Bạn có thể đổi vài món đạm đắt tiền lấy trứng, đậu hũ, gà hoặc cá basa để ép về ngân sách:</p>
+          <ul className="mt-3 space-y-2">
+            {swaps.map((s, i) => (
+              <li key={i} className="text-[11px] flex flex-wrap items-center justify-between gap-2 rounded-xl bg-background/50 p-2.5 shadow-sm">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium line-through text-muted-foreground">{s.oldDish.name}</span>
+                  <span className="text-muted-foreground">→</span>
+                  <span className="font-bold text-foreground">{s.newDish.name}</span>
+                </div>
+                <span className="text-[hsl(105_40%_45%)] font-bold whitespace-nowrap">- {money(s.saving)}</span>
+              </li>
+            ))}
+          </ul>
+          <button 
+            onClick={forceBudget}
+            className="tactile mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl bg-amber-500 px-3 py-2.5 text-xs font-bold text-white shadow-[0_3px_0_#d97706] hover:bg-amber-600 active:translate-y-[3px] active:shadow-none"
+            data-testid="button-auto-budget"
+          >
+            ⚡ Bấm 1-chạm để tự động ép về đúng ngân sách
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><ErrorBoundary><Shell /></ErrorBoundary></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>;
 }
 
 function Shell() {
   const [location] = useLocation();
-  const [prefs, setPrefs] = useState(initialPreferences);
+  const [prefs, setPrefs] = useState(readStoredPreferences);
   const [seed, setSeed] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isPro, setIsPro] = useState(() => window.localStorage.getItem(PRO_STORAGE_KEY) === 'true');
   const [upgradeOpen, setUpgradeOpen] = useState(false);
-  const [plan, setPlan] = useState(() => generatePlan(initialPreferences));
-  const [bought, setBought] = useState<Set<string>>(new Set());
+  const [plan, setPlan] = useState(() => readStoredPlan(prefs));
+  const [bought, setBought] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(window.localStorage.getItem(BOUGHT_STORAGE_KEY) || '[]') as string[]);
+    } catch {
+      return new Set();
+    }
+  });
   const [customItems, setCustomItems] = useState<{ name: string; bought: boolean }[]>([]);
   const [quantityOverrides, setQuantityOverrides] = useState<Record<string, number>>({});
   const [favoriteDishes, setFavoriteDishes] = useState<Set<string>>(new Set());
+  const [budgetNotice, setBudgetNotice] = useState('');
   const [expandedDay, setExpandedDay] = useState(0);
   const [activeMeal, setActiveMeal] = useState<'all' | 'breakfast' | 'lunch' | 'dinner'>('all');
   const units = unitsOf(prefs);
@@ -175,9 +482,18 @@ function Shell() {
     return base;
   }, [accessiblePlan, units, quantityOverrides]);
   const totalCost = useMemo(() => Object.entries(shopping).reduce((sum, [name, item]) => bought.has(name) ? sum : sum + priceFor(name, item.qty), 0) + PANTRY_COST[prefs.budget], [shopping, bought, prefs.budget]);
+  useEffect(() => {
+    window.localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(prefs));
+  }, [prefs]);
+  useEffect(() => {
+    window.localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(plan));
+  }, [plan]);
+  useEffect(() => {
+    window.localStorage.setItem(BOUGHT_STORAGE_KEY, JSON.stringify([...bought]));
+  }, [bought]);
   const regenerate = () => { const nextSeed = seed + 1; setSeed(nextSeed); setPlan(generatePlan(prefs, nextSeed)); setBought(new Set()); setQuantityOverrides({}); trackEvent('menu_regenerated', { membership: isPro ? 'pro' : 'free' }); };
   const updatePrefs = (next: Partial<Preferences>) => setPrefs((current) => ({ ...current, ...next }));
-  const saveSettings = () => { setPlan(generatePlan(prefs, seed + 1)); setSeed(seed + 1); setSettingsOpen(false); setBought(new Set()); setQuantityOverrides({}); };
+  const saveSettings = () => { setPlan(generatePlan(prefs, seed + 1)); setSeed(seed + 1); setSettingsOpen(false); setBought(new Set()); setQuantityOverrides({}); setBudgetNotice(''); };
   const unlockPro = () => {
     window.localStorage.setItem(PRO_STORAGE_KEY, 'true');
     setIsPro(true);
@@ -188,7 +504,54 @@ function Shell() {
     trackEvent('pro_upgrade_opened', { source });
     setUpgradeOpen(true);
   };
-  const page = location === '/shopping' ? <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} setQuantityOverrides={setQuantityOverrides} /> : location === '/costs' ? <CostsPage shopping={shopping} prefs={prefs} totalCost={totalCost} plan={accessiblePlan} /> : location === '/ask-ai' ? <AskAiPageV2 prefs={prefs} isPro={isPro} onUpgrade={() => openUpgrade('ai_limit')} /> : <HomePage plan={plan} isPro={isPro} onUpgrade={() => openUpgrade('locked_week')} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} />;
+  
+  const forceBudget = useCallback(() => {
+    let newPlan = plan.map(d => ({...d, lunch: {...d.lunch}, dinner: {...d.dinner}}));
+    let currentCost = Object.entries(aggregate(newPlan, units)).reduce((sum, [name, item]) => bought.has(name) ? sum : sum + priceFor(name, item.qty), 0) + PANTRY_COST[prefs.budget];
+    const target = prefs.targetBudget || 1200000;
+    
+    const cheapPool = poolAllowed(DAM, prefs).filter(d => ['Đậu hũ', 'Trứng gà', 'Cá basa', 'Ức gà'].some(ing => d.ing.some(i => i[0].includes(ing))));
+    if (cheapPool.length === 0) return;
+
+    let iterations = 0;
+    while (currentCost > target && iterations < 20) {
+      iterations++;
+      const nutritionTarget = {
+        cal: (prefs.kids * DAILY_TARGET.kid.calories + prefs.elderly * DAILY_TARGET.elderly.calories + prefs.adults * DAILY_TARGET.adult.calories) * 7,
+        protein: (prefs.kids * DAILY_TARGET.kid.protein + prefs.elderly * DAILY_TARGET.elderly.protein + prefs.adults * DAILY_TARGET.adult.protein) * 7,
+      };
+      const currentNutrition = newPlan.reduce((sum, day) => {
+        const value = mealCalories(day);
+        return { cal: sum.cal + value.cal * units, protein: sum.protein + value.protein * units };
+      }, { cal: 0, protein: 0 });
+      let bestSwap: { dayIdx: number; meal: 'lunch' | 'dinner'; dish: Dish; saving: number } | null = null;
+      newPlan.forEach((day, dayIdx) => {
+        (['lunch', 'dinner'] as const).forEach((meal) => {
+          const oldDish = day[meal].dam;
+          const oldValue = nutrition(oldDish);
+          cheapPool.forEach((candidate) => {
+            const saving = dishCost(oldDish, units) - dishCost(candidate, units);
+            if (saving <= 0) return;
+            const nextValue = nutrition(candidate);
+            const nextCal = currentNutrition.cal + (nextValue.cal - oldValue.cal) * units;
+            const nextProtein = currentNutrition.protein + (nextValue.protein - oldValue.protein) * units;
+            if (nextCal < nutritionTarget.cal || nextProtein < nutritionTarget.protein) return;
+            if (!bestSwap || saving > bestSwap.saving) bestSwap = { dayIdx, meal, dish: candidate, saving };
+          });
+        });
+      });
+      const selected = bestSwap as { dayIdx: number; meal: 'lunch' | 'dinner'; dish: Dish; saving: number } | null;
+      if (!selected) break;
+      newPlan[selected.dayIdx][selected.meal].dam = selected.dish;
+      currentCost = Object.entries(aggregate(newPlan, units)).reduce((sum, [name, item]) => bought.has(name) ? sum : sum + priceFor(name, item.qty), 0) + PANTRY_COST[prefs.budget];
+    }
+    const changed = JSON.stringify(newPlan) !== JSON.stringify(plan);
+    setPlan(newPlan);
+    setBudgetNotice(changed ? '' : 'Không thể giảm thêm mà vẫn giữ đủ calo và đạm khuyến nghị. Hãy tăng ngân sách mục tiêu một chút.');
+    trackEvent('force_budget_applied');
+  }, [plan, units, prefs, bought]);
+
+  const page = location === '/shopping' ? <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} setQuantityOverrides={setQuantityOverrides} targetBudget={prefs.targetBudget || 1200000} /> : location === '/costs' ? <CostsPage shopping={shopping} prefs={prefs} totalCost={totalCost} plan={accessiblePlan} /> : location === '/ask-ai' ? <AskAiPageV2 prefs={prefs} isPro={isPro} onUpgrade={() => openUpgrade('ai_limit')} /> : <HomePage plan={plan} isPro={isPro} onUpgrade={() => openUpgrade('locked_week')} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} totalCost={totalCost} forceBudget={forceBudget} budgetNotice={budgetNotice} />;
   return <div className="app-shell grain"><header className="content-wrap pt-5 md:pt-8"><div className="flex items-start justify-between gap-4"><Link href="/" className="flex items-center gap-3 no-underline" data-testid="link-home"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_5px_0_hsl(13_72%_43%)]"><ChefHat size={23} strokeWidth={2.4} /></span><span><span className="display-font block text-xl font-bold tracking-tight text-primary">30 Phút</span><span className="block text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">Yêu thương</span></span></Link><div className="top-actions flex items-center gap-2">{isPro ? <span className="inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-xs font-bold text-accent-foreground"><Crown size={13} /> Thành viên Pro</span> : <button onClick={() => openUpgrade('header')} className="tactile inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-2 text-xs font-bold text-primary-foreground" data-testid="button-header-upgrade"><Crown size={13} /> Nâng cấp Pro</button>}<button onClick={() => window.print()} className="tactile flex h-10 w-10 items-center justify-center rounded-full border bg-card text-muted-foreground" aria-label="In trang" data-testid="button-print"><Printer size={17} /></button></div></div></header><main className="content-wrap page-enter">{page}</main><BottomNav location={location} /><InstallAppBanner /><ProUpgradeModal open={upgradeOpen} onClose={() => setUpgradeOpen(false)} onUnlocked={unlockPro} /></div>;
 }
 
@@ -234,16 +597,17 @@ function InstallAppBanner() {
   </aside>;
 }
 
-function HomePage({ plan, isPro, onUpgrade, prefs, settingsOpen, setSettingsOpen, updatePrefs, saveSettings, regenerate, expandedDay, setExpandedDay, activeMeal, setActiveMeal, favoriteDishes, setFavoriteDishes }: { plan: DayPlan[]; isPro: boolean; onUpgrade: () => void; prefs: Preferences; settingsOpen: boolean; setSettingsOpen: (value: boolean) => void; updatePrefs: (value: Partial<Preferences>) => void; saveSettings: () => void; regenerate: () => void; expandedDay: number; setExpandedDay: (value: number) => void; activeMeal: 'all' | 'breakfast' | 'lunch' | 'dinner'; setActiveMeal: (value: 'all' | 'breakfast' | 'lunch' | 'dinner') => void; favoriteDishes: Set<string>; setFavoriteDishes: (value: Set<string>) => void }) {
+function HomePage({ plan, isPro, onUpgrade, prefs, settingsOpen, setSettingsOpen, updatePrefs, saveSettings, regenerate, expandedDay, setExpandedDay, activeMeal, setActiveMeal, favoriteDishes, setFavoriteDishes, totalCost, forceBudget, budgetNotice }: { plan: DayPlan[]; isPro: boolean; onUpgrade: () => void; prefs: Preferences; settingsOpen: boolean; setSettingsOpen: (value: boolean) => void; updatePrefs: (value: Partial<Preferences>) => void; saveSettings: () => void; regenerate: () => void; expandedDay: number; setExpandedDay: (value: number) => void; activeMeal: 'all' | 'breakfast' | 'lunch' | 'dinner'; setActiveMeal: (value: 'all' | 'breakfast' | 'lunch' | 'dinner') => void; favoriteDishes: Set<string>; setFavoriteDishes: (value: Set<string>) => void; totalCost: number; forceBudget: () => void; budgetNotice: string }) {
   const today = plan[0];
   const household = `${prefs.kids + prefs.elderly + prefs.adults} người`;
   const visiblePlan = isPro ? plan : plan.slice(0, FREE_DAY_LIMIT);
+  const units = unitsOf(prefs);
   return <div className="space-y-5 pb-5">
     <section className="relative overflow-hidden rounded-[28px] border border-[hsl(36_70%_82%)] bg-[linear-gradient(135deg,hsl(41_100%_91%),hsl(12_100%_93%)_55%,hsl(103_40%_90%))] px-5 py-6 shadow-[0_15px_35px_rgba(112,64,25,.08)] md:px-9 md:py-9"><div className="absolute -right-12 -top-16 h-44 w-44 rounded-full border-[18px] border-[hsl(43_100%_61%/.3)]" /><div className="relative max-w-2xl"><p className="mb-2 text-xs font-bold uppercase tracking-[.19em] text-[hsl(105_33%_30%)]">Bữa cơm hôm nay</p><h1 className="display-font max-w-xl text-[clamp(2.15rem,7vw,4.2rem)] font-bold leading-[.98] tracking-[-.04em] text-[hsl(13_72%_38%)]">Nấu nhanh một chút,<br /><span className="text-[hsl(105_33%_30%)]">thương nhau nhiều hơn.</span></h1><p className="mt-4 max-w-lg text-sm leading-6 text-muted-foreground">Một tuần đủ chất, vừa túi tiền và không làm bạn phải đứng bếp cả tối.</p><div className="mt-5 flex flex-wrap items-center gap-2"><span className="inline-flex items-center gap-1.5 rounded-full bg-card/80 px-3 py-2 text-xs font-bold text-foreground"><Users size={14} className="text-primary" /> {household}</span><span className="inline-flex items-center gap-1.5 rounded-full bg-card/80 px-3 py-2 text-xs font-bold text-foreground"><Clock3 size={14} className="text-[hsl(105_33%_30%)]" /> {prefs.maxTime} phút / bữa</span><span className="inline-flex items-center gap-1.5 rounded-full bg-card/80 px-3 py-2 text-xs font-bold text-foreground"><Leaf size={14} className="text-[hsl(105_33%_30%)]" /> {budgetLabels[prefs.budget]}</span></div></div></section>
     <SettingsPanel open={settingsOpen} setOpen={setSettingsOpen} prefs={prefs} updatePrefs={updatePrefs} saveSettings={saveSettings} />
     <section className="grid gap-5 lg:grid-cols-[1.15fr_.85fr]">
-      <div className="min-w-0 space-y-4"><div className="flex items-end justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-primary">{isPro ? 'Trọn tuần' : 'Gói miễn phí · 3 ngày đầu'}</p><h2 className="display-font mt-1 text-3xl font-bold tracking-tight">Mình ăn gì nhỉ?</h2></div><button onClick={regenerate} className="tactile inline-flex items-center gap-2 rounded-full border border-primary/30 bg-card px-3.5 py-2 text-xs font-bold text-primary" data-testid="button-regenerate"><RefreshCw size={14} /> Đổi tuần khác</button></div><div className="flex max-w-full gap-2 overflow-x-auto pb-1" role="tablist">{[['all','Tất cả'],['breakfast','Bữa sáng'],['lunch','Bữa trưa'],['dinner','Bữa tối']].map(([value,label]) => <button key={value} onClick={() => setActiveMeal(value as typeof activeMeal)} className={`whitespace-nowrap rounded-full px-4 py-2 text-xs font-bold transition-colors ${activeMeal === value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}`} data-testid={`button-filter-${value}`}>{label}</button>)}</div>{visiblePlan.map((day, index) => <DayCard key={day.day} day={day} index={index} open={expandedDay === index} setOpen={() => setExpandedDay(expandedDay === index ? -1 : index)} activeMeal={activeMeal} favorites={favoriteDishes} setFavorites={setFavoriteDishes} />)}{!isPro && <LockedWeekBanner onUpgrade={onUpgrade} />}</div>
-      <aside className="space-y-4"><TodayCard day={today} prefs={prefs} /><NutritionCard plan={visiblePlan} prefs={prefs} /><NewsletterSignup /><div className="paper-card hidden overflow-hidden p-5 md:block"><div className="flex items-center gap-2 text-sm font-bold"><Sparkles size={17} className="text-primary" /> Mẹo để bếp nhẹ tênh</div><p className="mt-3 text-sm leading-6 text-muted-foreground">Sơ chế hành, gừng và rau củ ngay sau khi đi chợ. Đến bữa chỉ cần mở nồi hấp — 30 phút đủ cho cả nhà ngồi vào mâm.</p></div></aside>
+      <div className="min-w-0 space-y-4"><div className="flex items-end justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-primary">{isPro ? 'Trọn tuần' : 'Gói miễn phí · 3 ngày đầu'}</p><h2 className="display-font mt-1 text-3xl font-bold tracking-tight">Mình ăn gì nhỉ?</h2></div><button onClick={regenerate} className="tactile inline-flex items-center gap-2 rounded-full border border-primary/30 bg-card px-3.5 py-2 text-xs font-bold text-primary" data-testid="button-regenerate"><RefreshCw size={14} /> Đổi tuần khác</button></div><div className="flex max-w-full gap-2 overflow-x-auto pb-1" role="tablist">{[['all','Tất cả'],['breakfast','Bữa sáng'],['lunch','Bữa trưa'],['dinner','Bữa tối']].map(([value,label]) => <button key={value} onClick={() => setActiveMeal(value as typeof activeMeal)} className={`whitespace-nowrap rounded-full px-4 py-2 text-xs font-bold transition-colors ${activeMeal === value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}`} data-testid={`button-filter-${value}`}>{label}</button>)}</div><BudgetWarning plan={plan} units={units} p={prefs} totalCost={totalCost} forceBudget={forceBudget} />{budgetNotice && <p className="rounded-xl border border-amber-400/40 bg-amber-50 p-3 text-xs font-bold leading-5 text-amber-800" role="status" data-testid="budget-infeasible-notice">{budgetNotice}</p>}{visiblePlan.map((day, index) => <DayCard key={day.day} day={day} index={index} open={expandedDay === index} setOpen={() => setExpandedDay(expandedDay === index ? -1 : index)} activeMeal={activeMeal} favorites={favoriteDishes} setFavorites={setFavoriteDishes} />)}{!isPro && <LockedWeekBanner onUpgrade={onUpgrade} />}</div>
+      <aside className="space-y-4"><div className="paper-card p-5"><h3 className="text-sm font-bold flex items-center gap-2 mb-4"><WalletCards size={17} className="text-primary" /> Ngân sách tuần này</h3><BudgetProgress totalCost={totalCost} targetBudget={prefs.targetBudget || 1200000} /></div><TodayCard day={today} prefs={prefs} /><NutritionCard plan={visiblePlan} prefs={prefs} /><NewsletterSignup /><div className="paper-card hidden overflow-hidden p-5 md:block"><div className="flex items-center gap-2 text-sm font-bold"><Sparkles size={17} className="text-primary" /> Mẹo để bếp nhẹ tênh</div><p className="mt-3 text-sm leading-6 text-muted-foreground">Sơ chế hành, gừng và rau củ ngay sau khi đi chợ. Đến bữa chỉ cần mở nồi hấp — 30 phút đủ cho cả nhà ngồi vào mâm.</p></div></aside>
     </section>
   </div>;
 }
@@ -323,7 +687,7 @@ function ProUpgradeModal({ open, onClose, onUnlocked }: { open: boolean; onClose
 }
 
 function SettingsPanel({ open, setOpen, prefs, updatePrefs, saveSettings }: { open: boolean; setOpen: (value: boolean) => void; prefs: Preferences; updatePrefs: (value: Partial<Preferences>) => void; saveSettings: () => void }) {
-  return <section className={`paper-card overflow-hidden transition-[max-height] duration-300 ${open ? 'max-h-[900px]' : 'max-h-24'}`}><button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between gap-3 p-4 text-left md:p-5" data-testid="button-toggle-settings"><span className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><SlidersHorizontal size={17} /></span><span><span className="block text-sm font-bold">Thiết lập nhà mình</span><span className="block text-xs text-muted-foreground">{prefs.kids} trẻ nhỏ · {prefs.elderly} người già · {prefs.adults} người lớn</span></span></span>{open ? <ChevronUp size={18} /> : <ChevronDown size={18} />}</button>{open && <div className="border-t bg-[hsl(39_67%_96%/.55)] p-4 md:p-5"><div className="grid gap-4 sm:grid-cols-3"><NumberField label="Trẻ nhỏ" hint="hệ số 0,55" value={prefs.kids} onChange={(value) => updatePrefs({ kids: value })} testId="input-kids" /><NumberField label="Người già" hint="hệ số 0,8" value={prefs.elderly} onChange={(value) => updatePrefs({ elderly: value })} testId="input-elderly" /><NumberField label="Người lớn" hint="hệ số 1,0" value={prefs.adults} onChange={(value) => updatePrefs({ adults: value })} testId="input-adults" /></div><div className="mt-4 grid gap-4 sm:grid-cols-3"><SelectField label="Thời gian nấu" value={String(prefs.maxTime)} onChange={(value) => updatePrefs({ maxTime: Number(value) })} options={[['20','20 phút'],['30','30 phút'],['45','45 phút']]} testId="select-time" /><SelectField label="Ngân sách" value={prefs.budget} onChange={(value) => updatePrefs({ budget: value as Budget })} options={[['tietkiem','Tiết kiệm'],['vua','Vừa phải'],['thoaimai','Thoải mái hơn']]} testId="select-budget" /><SelectField label="Ăn chay" value={prefs.veg} onChange={(value) => updatePrefs({ veg: value as VegMode })} options={[['0','Không cần'],['1','Xen kẽ'],['2','Hoàn toàn']]} testId="select-vegetarian" /></div><div className="mt-4"><p className="mb-2 text-xs font-bold uppercase tracking-[.12em] text-muted-foreground">Dị ứng cần tránh</p><div className="flex flex-wrap gap-2">{allergyOptions.map((option) => { const active = prefs.allergies.includes(option.value); return <button key={option.value} onClick={() => updatePrefs({ allergies: active ? prefs.allergies.filter((item) => item !== option.value) : [...prefs.allergies, option.value] })} className={`rounded-full border px-3 py-2 text-xs font-bold transition-colors ${active ? 'border-primary bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`} data-testid={`button-allergy-${option.label}`}>{active && <Check size={13} className="mr-1 inline" />}{option.label}</button>; })}</div></div><div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-muted-foreground">Dị ứng khác<input value={prefs.allergyOther} onChange={(event) => updatePrefs({ allergyOther: event.target.value })} placeholder="Ví dụ: mè, đậu nành" className="mt-1.5 w-full rounded-xl border bg-card px-3 py-2.5 text-sm outline-none ring-primary focus:ring-2" data-testid="input-allergy-other" /></label><label className="text-xs font-bold text-muted-foreground">Món / nguyên liệu nhà mình thích<input value={prefs.favoriteIngredients} onChange={(event) => updatePrefs({ favoriteIngredients: event.target.value })} placeholder="Ví dụ: cá, bí đỏ, đậu hũ" className="mt-1.5 w-full rounded-xl border bg-card px-3 py-2.5 text-sm outline-none ring-primary focus:ring-2" data-testid="input-favorites" /></label></div><button onClick={saveSettings} className="tactile mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-[0_4px_0_hsl(13_72%_43%)]" data-testid="button-save-settings"><Check size={16} /> Lưu và tạo thực đơn mới</button></div>}</section>;
+  return <section className={`paper-card overflow-hidden transition-[max-height] duration-300 ${open ? 'max-h-[900px]' : 'max-h-24'}`}><button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between gap-3 p-4 text-left md:p-5" data-testid="button-toggle-settings"><span className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><SlidersHorizontal size={17} /></span><span><span className="block text-sm font-bold">Thiết lập nhà mình</span><span className="block text-xs text-muted-foreground">{prefs.kids} trẻ nhỏ · {prefs.elderly} người già · {prefs.adults} người lớn</span></span></span>{open ? <ChevronUp size={18} /> : <ChevronDown size={18} />}</button>{open && <div className="border-t bg-[hsl(39_67%_96%/.55)] p-4 md:p-5"><div className="grid gap-4 sm:grid-cols-3"><NumberField label="Trẻ nhỏ" hint="hệ số 0,55" value={prefs.kids} onChange={(value) => updatePrefs({ kids: value })} testId="input-kids" /><NumberField label="Người già" hint="hệ số 0,8" value={prefs.elderly} onChange={(value) => updatePrefs({ elderly: value })} testId="input-elderly" /><NumberField label="Người lớn" hint="hệ số 1,0" value={prefs.adults} onChange={(value) => updatePrefs({ adults: value })} testId="input-adults" /></div><div className="mt-4 grid gap-4 sm:grid-cols-3"><SelectField label="Thời gian nấu" value={String(prefs.maxTime)} onChange={(value) => updatePrefs({ maxTime: Number(value) })} options={[['20','20 phút'],['30','30 phút'],['45','45 phút']]} testId="select-time" /><div><label className="text-xs font-bold text-muted-foreground block mb-1.5">Ngân sách đi chợ</label><div className="flex max-w-full gap-2 overflow-x-auto pb-1" role="radiogroup">{(['tietkiem','vua','thoaimai'] as Budget[]).map((b) => <button key={b} role="radio" aria-checked={prefs.budget === b} onClick={() => updatePrefs({ budget: b })} className={`shrink-0 rounded-xl border px-3 py-2 text-xs font-bold transition-all ${prefs.budget === b ? 'border-primary bg-primary/10 text-primary' : 'bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground'}`}>{budgetLabels[b]}</button>)}</div></div><SelectField label="Ăn chay" value={prefs.veg} onChange={(value) => updatePrefs({ veg: value as VegMode })} options={[['0','Không cần'],['1','Xen kẽ'],['2','Hoàn toàn']]} testId="select-vegetarian" /></div><div className="mt-4"><label className="block text-xs font-bold text-muted-foreground">Mục tiêu ngân sách (VNĐ / tuần)</label><div className="relative mt-1.5"><input type="number" step="50000" value={prefs.targetBudget || 1200000} onChange={(event) => updatePrefs({ targetBudget: Number(event.target.value) || 0 })} className="w-full rounded-xl border bg-card px-4 py-2.5 pl-10 text-sm font-bold outline-none ring-primary focus:ring-2" data-testid="input-target-budget" /><WalletCards size={16} className="absolute left-3 top-3 text-muted-foreground" /></div><p className="mt-1 text-[10px] font-medium text-muted-foreground">Tự động ưu tiên món ăn để tổng chi phí không vượt mức này.</p></div><div className="mt-4"><p className="mb-2 text-xs font-bold uppercase tracking-[.12em] text-muted-foreground">Dị ứng cần tránh</p><div className="flex flex-wrap gap-2">{allergyOptions.map((option) => { const active = prefs.allergies.includes(option.value); return <button key={option.value} onClick={() => updatePrefs({ allergies: active ? prefs.allergies.filter((item) => item !== option.value) : [...prefs.allergies, option.value] })} className={`rounded-full border px-3 py-2 text-xs font-bold transition-colors ${active ? 'border-primary bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`} data-testid={`button-allergy-${option.label}`}>{active && <Check size={13} className="mr-1 inline" />}{option.label}</button>; })}</div></div><div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-muted-foreground">Dị ứng khác<input value={prefs.allergyOther} onChange={(event) => updatePrefs({ allergyOther: event.target.value })} placeholder="Ví dụ: mè, đậu nành" className="mt-1.5 w-full rounded-xl border bg-card px-3 py-2.5 text-sm outline-none ring-primary focus:ring-2" data-testid="input-allergy-other" /></label><label className="text-xs font-bold text-muted-foreground">Món / nguyên liệu nhà mình thích<input value={prefs.favoriteIngredients} onChange={(event) => updatePrefs({ favoriteIngredients: event.target.value })} placeholder="Ví dụ: cá, bí đỏ, đậu hũ" className="mt-1.5 w-full rounded-xl border bg-card px-3 py-2.5 text-sm outline-none ring-primary focus:ring-2" data-testid="input-favorites" /></label></div><button onClick={saveSettings} className="tactile mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-[0_4px_0_hsl(13_72%_43%)]" data-testid="button-save-settings"><Check size={16} /> Lưu và tạo thực đơn mới</button></div>}</section>;
 }
 
 function NumberField({ label, hint, value, onChange, testId }: { label: string; hint: string; value: number; onChange: (value: number) => void; testId: string }) { return <label className="block text-xs font-bold text-muted-foreground">{label}<input type="number" min="0" max="12" value={value} onChange={(event) => onChange(Math.max(0, Number(event.target.value)))} className="mt-1.5 w-full rounded-xl border bg-card px-3 py-2.5 text-center text-base font-bold text-foreground outline-none ring-primary focus:ring-2" data-testid={testId} /><span className="mt-1 block text-[10px] font-medium text-muted-foreground">{hint}</span></label>; }
@@ -350,7 +714,7 @@ function ShoppingPage({ shopping, bought, setBought, customItems, setCustomItems
 }
 function ShoppingGroup({ category, items, bought, toggle }: { category: string; items: [string, { qty: number; unit?: string }][]; bought: Set<string>; toggle: (name: string) => void }) { return <section className="paper-card overflow-hidden"><div className="flex items-center justify-between border-b bg-muted/45 px-4 py-3"><h2 className="text-sm font-bold">{category}</h2><span className="rounded-full bg-card px-2.5 py-1 text-[10px] font-bold text-muted-foreground">{items.length} món</span></div><div className="divide-y">{items.map(([name, value]) => { const done = bought.has(name); return <div key={name} className={`flex items-center justify-between gap-3 px-4 py-3.5 transition-opacity ${done ? 'opacity-45' : ''}`}><button onClick={() => toggle(name)} className="flex min-w-0 items-center gap-3 text-left" data-testid={`button-bought-${name}`}><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${done ? 'border-[hsl(105_40%_45%)] bg-[hsl(105_40%_45%)] text-white' : 'border-[hsl(37_43%_74%)] bg-card'}`}>{done && <Check size={14} strokeWidth={3} />}</span><span className={`text-sm font-semibold ${done ? 'line-through' : ''}`}>{name}</span></button><span className="shrink-0 text-xs font-bold text-muted-foreground">{displayQuantity(value)}</span></div>; })}</div></section>; }
 
-function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomItems, totalCost, setQuantityOverrides }: { shopping: Aggregate; bought: Set<string>; setBought: (value: Set<string>) => void; customItems: { name: string; bought: boolean }[]; setCustomItems: (value: { name: string; bought: boolean }[]) => void; totalCost: number; setQuantityOverrides: (value: Record<string, number> | ((current: Record<string, number>) => Record<string, number>)) => void }) {
+function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomItems, totalCost, setQuantityOverrides, targetBudget }: { shopping: Aggregate; bought: Set<string>; setBought: (value: Set<string>) => void; customItems: { name: string; bought: boolean }[]; setCustomItems: (value: { name: string; bought: boolean }[]) => void; totalCost: number; setQuantityOverrides: (value: Record<string, number> | ((current: Record<string, number>) => Record<string, number>)) => void; targetBudget: number }) {
   const [newItem, setNewItem] = useState('');
   const [copied, setCopied] = useState(false);
   const entries = Object.entries(shopping) as [string, { qty: number; unit?: string }][];
@@ -414,6 +778,9 @@ function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomIte
         <button onClick={() => window.print()} className="tactile inline-flex items-center gap-2 rounded-full border bg-card px-4 py-2.5 text-xs font-bold" data-testid="button-print-shopping"><Printer size={15} /> In danh sách</button>
       </div>
     </section>
+    <div className="paper-card p-5">
+      <BudgetProgress totalCost={totalCost} targetBudget={targetBudget} />
+    </div>
     <div className="paper-card flex flex-wrap items-center justify-between gap-4 bg-[hsl(41_100%_91%)] p-4 md:p-5">
       <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-accent"><ShoppingBasket size={19} /></span><div><p className="text-xs font-bold text-muted-foreground">Tiến độ đi chợ</p><p className="text-xl font-bold">{boughtCount}<span className="text-sm font-medium text-muted-foreground"> / {totalCount} món</span></p></div></div>
       <div className="text-right"><p className="text-xs font-bold text-muted-foreground">Ước tính còn cần chi</p><p className="text-xl font-bold text-primary">{money(totalCost)}</p><p className="mt-1 text-[10px] text-muted-foreground">Đã trừ món nhà mình có sẵn</p></div>
@@ -434,7 +801,7 @@ function ShoppingGroupV2({ title, subtitle, items, bought, toggle, updateQuantit
   </section>;
 }
 
-function CostsPage({ shopping, prefs, totalCost, plan }: { shopping: Aggregate; prefs: Preferences; totalCost: number; plan: DayPlan[] }) { const ingredients = Object.entries(shopping).reduce((sum, [name, value]) => sum + priceFor(name, value.qty), 0); const weeklyBudget = prefs.budget === 'tietkiem' ? 650000 : prefs.budget === 'thoaimai' ? 1200000 : 850000; const remaining = weeklyBudget - totalCost; const bars = plan.map((day) => Math.round(mealCalories(day).cal * unitsOf(prefs))); const max = Math.max(...bars); return <div className="space-y-5"><section className="flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><p className="text-xs font-bold uppercase tracking-[.17em] text-primary">Chi phí</p><h1 className="display-font mt-1 text-4xl font-bold tracking-tight">Tiền đi chợ, nhìn là hiểu.</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Không cần cộng tay. Công thức giá lấy theo lượng nguyên liệu thật trong thực đơn tuần.</p></div><Link href="/shopping" className="tactile inline-flex w-fit items-center gap-2 rounded-full border bg-card px-4 py-2.5 text-xs font-bold" data-testid="link-costs-shopping">Xem danh sách <ArrowUpRight size={14} /></Link></section><section className="grid gap-4 sm:grid-cols-3"><StatCard label="Dự kiến cả tuần" value={money(totalCost)} accent="primary" /><StatCard label="Nguyên liệu chính" value={money(ingredients)} /><StatCard label={remaining >= 0 ? 'Còn trong ngân sách' : 'Vượt ngân sách'} value={money(Math.abs(remaining))} accent={remaining >= 0 ? 'sage' : 'berry'} /></section><section className="paper-card p-5 md:p-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-muted-foreground">Nhịp chi tiêu</p><h2 className="display-font mt-1 text-2xl font-bold">Mức {budgetLabels[prefs.budget].toLowerCase()}</h2></div><WalletCards size={21} className="text-primary" /></div><div className="mt-6 flex h-44 items-end gap-2 border-b border-l px-2 pb-0 pt-4 sm:gap-4">{bars.map((value, index) => <div key={DAY_NAMES[index]} className="flex h-full flex-1 flex-col items-center justify-end gap-2"><div className="w-full max-w-9 rounded-t-lg bg-[hsl(13_80%_56%/.82)] transition-[height] duration-500" style={{ height: `${Math.max(13, value / max * 100)}%` }} /><span className="text-[10px] font-bold text-muted-foreground">{index === 6 ? 'CN' : `T${index + 2}`}</span></div>)}</div><p className="mt-4 text-xs leading-5 text-muted-foreground">Mỗi ngày gồm sáng, trưa, tối và phần gia vị phân bổ theo tuần. Mức này là ước tính tham khảo — giá chợ có thể thay đổi theo mùa.</p></section><section className="paper-card p-5 md:p-6"><h2 className="display-font text-2xl font-bold">Nếu muốn tiết kiệm thêm</h2><div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="rounded-2xl bg-secondary p-4"><p className="text-sm font-bold">Đổi 1 bữa cá hồi</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Cá basa hấp gừng vẫn giữ đạm và omega-3, nhẹ ví hơn khoảng 28.000 đ / khẩu phần.</p></div><div className="rounded-2xl bg-[hsl(41_100%_91%)] p-4"><p className="text-sm font-bold">Mua theo mùa</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Rau luộc trong tuần có thể thay bằng loại đang tươi nhất ở chợ, công thức vẫn đủ chất.</p></div></div></section></div>; }
+function CostsPage({ shopping, prefs, totalCost, plan }: { shopping: Aggregate; prefs: Preferences; totalCost: number; plan: DayPlan[] }) { const ingredients = Object.entries(shopping).reduce((sum, [name, value]) => sum + priceFor(name, value.qty), 0); const remaining = (prefs.targetBudget || 1200000) - totalCost; const bars = plan.map((day) => Math.round(mealCalories(day).cal * unitsOf(prefs))); const max = Math.max(...bars); return <div className="space-y-5"><section className="flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><p className="text-xs font-bold uppercase tracking-[.17em] text-primary">Chi phí</p><h1 className="display-font mt-1 text-4xl font-bold tracking-tight">Tiền đi chợ, nhìn là hiểu.</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Không cần cộng tay. Công thức giá lấy theo lượng nguyên liệu thật trong thực đơn tuần.</p></div><Link href="/shopping" className="tactile inline-flex w-fit items-center gap-2 rounded-full border bg-card px-4 py-2.5 text-xs font-bold" data-testid="link-costs-shopping">Xem danh sách <ArrowUpRight size={14} /></Link></section><div className="paper-card p-5"><h3 className="text-sm font-bold flex items-center gap-2 mb-4"><WalletCards size={17} className="text-primary" /> Ngân sách tuần này</h3><BudgetProgress totalCost={totalCost} targetBudget={prefs.targetBudget || 1200000} /></div><section className="grid gap-4 sm:grid-cols-3"><StatCard label="Dự kiến cả tuần" value={money(totalCost)} accent="primary" /><StatCard label="Nguyên liệu chính" value={money(ingredients)} /><StatCard label={remaining >= 0 ? 'Còn trong ngân sách' : 'Vượt ngân sách'} value={money(Math.abs(remaining))} accent={remaining >= 0 ? 'sage' : 'berry'} /></section><section className="paper-card p-5 md:p-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-muted-foreground">Nhịp chi tiêu</p><h2 className="display-font mt-1 text-2xl font-bold">Mức {budgetLabels[prefs.budget].toLowerCase()}</h2></div><WalletCards size={21} className="text-primary" /></div><div className="mt-6 flex h-44 items-end gap-2 border-b border-l px-2 pb-0 pt-4 sm:gap-4">{bars.map((value, index) => <div key={DAY_NAMES[index]} className="flex h-full flex-1 flex-col items-center justify-end gap-2"><div className="w-full max-w-9 rounded-t-lg bg-[hsl(13_80%_56%/.82)] transition-[height] duration-500" style={{ height: `${Math.max(13, value / max * 100)}%` }} /><span className="text-[10px] font-bold text-muted-foreground">{index === 6 ? 'CN' : `T${index + 2}`}</span></div>)}</div><p className="mt-4 text-xs leading-5 text-muted-foreground">Mỗi ngày gồm sáng, trưa, tối và phần gia vị phân bổ theo tuần. Mức này là ước tính tham khảo — giá chợ có thể thay đổi theo mùa.</p></section><section className="paper-card p-5 md:p-6"><h2 className="display-font text-2xl font-bold">Nếu muốn tiết kiệm thêm</h2><div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="rounded-2xl bg-secondary p-4"><p className="text-sm font-bold">Đổi 1 bữa cá hồi</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Cá basa hấp gừng vẫn giữ đạm và omega-3, nhẹ ví hơn khoảng 28.000 đ / khẩu phần.</p></div><div className="rounded-2xl bg-[hsl(41_100%_91%)] p-4"><p className="text-sm font-bold">Mua theo mùa</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Rau luộc trong tuần có thể thay bằng loại đang tươi nhất ở chợ, công thức vẫn đủ chất.</p></div></div></section></div>; }
 function StatCard({ label, value, accent = '' }: { label: string; value: string; accent?: string }) { return <section className={`paper-card p-5 ${accent === 'primary' ? 'bg-primary text-primary-foreground' : accent === 'sage' ? 'bg-secondary' : accent === 'berry' ? 'bg-[hsl(12_100%_93%)]' : ''}`}><p className={`text-xs font-bold ${accent === 'primary' ? 'text-primary-foreground/75' : 'text-muted-foreground'}`}>{label}</p><p className="display-font mt-2 text-2xl font-bold">{value}</p></section>; }
 
 function AskAiPage({ prefs, plan }: { prefs: Preferences; plan: DayPlan[] }) { const [question, setQuestion] = useState(''); const [messages, setMessages] = useState<{ from: 'ai' | 'me'; text: string }[]>([{ from: 'ai', text: 'Mình ở đây để giúp bữa cơm hôm nay nhẹ đầu hơn. Bạn có thể hỏi về món thay thế, lượng ăn của bé, hoặc cách tận dụng nguyên liệu trong danh sách.' }]); const ask = () => { const text = question.trim(); if (!text) return; const lower = normalize(text); let answer = 'Theo thực đơn tuần này, bạn có thể giữ món chính và đổi phần rau hoặc canh sang món cùng nhóm. Như vậy danh sách đi chợ và dinh dưỡng vẫn cân bằng.'; if (lower.includes('be') || lower.includes('tre')) answer = 'Phần của trẻ nhỏ đang được tính theo hệ số 0,55. Bạn nên múc phần nhạt trước, cắt nhỏ cá và rau, rồi mới nêm đậm hơn cho người lớn.'; else if (lower.includes('nhanh') || lower.includes('phut')) answer = `Bữa nhanh nhất hôm nay là ${plan[0].breakfast.name}, khoảng ${plan[0].breakfast.time} phút. Với bữa chính, ưu tiên hấp đạm và luộc rau cùng lúc để giữ mốc ${prefs.maxTime} phút.`; else if (lower.includes('di ung') || lower.includes('tranh')) answer = prefs.allergies.length || prefs.allergyOther ? `Mình đã loại ${prefs.allergies.join(', ')}${prefs.allergyOther ? ` và ${prefs.allergyOther}` : ''} khỏi gợi ý. Nếu thấy món nào chưa phù hợp, hãy mở Thiết lập nhà mình để cập nhật.` : 'Nhà mình chưa ghi nhận dị ứng nào. Bạn có thể mở Thiết lập nhà mình và thêm ngay, thực đơn sẽ lọc lại.'; else if (lower.includes('nguyen lieu') || lower.includes('con gi')) answer = 'Bạn có thể ưu tiên dùng hết bí đỏ, cà chua và đậu hũ trong tuần này — đây là những nguyên liệu xuất hiện ở nhiều món và dễ bảo quản.'; setMessages([...messages, { from: 'me', text }, { from: 'ai', text: answer }]); setQuestion(''); }; return <div className="mx-auto max-w-3xl space-y-5"><section className="rounded-[28px] bg-foreground p-6 text-background md:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.17em] text-accent">Bếp nhà mình</p><h1 className="display-font mt-2 text-4xl font-bold tracking-tight">Hỏi gì cũng được.</h1><p className="mt-3 max-w-lg text-sm leading-6 text-background/70">Một trợ lý nhỏ, nhớ thực đơn và những điều gia đình bạn cần tránh.</p></div><span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground"><Sparkles size={22} /></span></div><div className="mt-6 flex flex-wrap gap-2">{['Món nào nhanh nhất?', 'Bé ăn phần nào?', 'Có thể đổi nguyên liệu không?'].map((prompt) => <button key={prompt} onClick={() => setQuestion(prompt)} className="rounded-full border border-background/15 bg-background/10 px-3 py-2 text-xs font-bold text-background/80 hover:bg-background/15" data-testid={`button-prompt-${prompt}`}>{prompt}</button>)}</div></section><section className="paper-card flex min-h-[390px] flex-col p-4 md:p-6"><div className="flex-1 space-y-4">{messages.map((message, index) => <div key={`${message.from}-${index}`} className={`flex gap-3 ${message.from === 'me' ? 'justify-end' : ''}`}><span className={`mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${message.from === 'ai' ? 'bg-secondary text-secondary-foreground' : 'bg-primary text-primary-foreground'}`}>{message.from === 'ai' ? <MessageCircle size={15} /> : <Users size={15} />}</span><p className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-6 ${message.from === 'ai' ? 'bg-muted' : 'bg-primary text-primary-foreground'}`} data-testid={`text-ai-message-${index}`}>{message.text}</p></div>)}</div><div className="mt-6 flex items-center gap-2 rounded-2xl border bg-background p-2 focus-within:ring-2 focus-within:ring-primary"><Search size={17} className="ml-2 text-muted-foreground" /><input value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && ask()} placeholder="Hỏi về bữa cơm nhà mình..." className="min-w-0 flex-1 bg-transparent px-1 py-2 text-sm outline-none" data-testid="input-ask-ai" /><button onClick={ask} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground" aria-label="Gửi câu hỏi" data-testid="button-ask-ai"><Send size={16} /></button></div></section><p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground"><CircleHelp size={15} className="mt-0.5 shrink-0" /> Gợi ý địa phương, không thay thế tư vấn y khoa. Luôn kiểm tra dị ứng trước khi nấu cho trẻ nhỏ.</p></div>; }
