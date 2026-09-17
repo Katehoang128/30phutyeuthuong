@@ -106,8 +106,8 @@
 
 @layer base {
   * { @apply border-border; }
-  html { background: hsl(var(--background)); }
-  body { @apply font-sans antialiased bg-background text-foreground; margin: 0; }
+  html { background: hsl(var(--background)); overflow-x: clip; }
+  body { @apply font-sans antialiased bg-background text-foreground; margin: 0; overflow-x: clip; }
   button, input, select { font: inherit; }
   button { cursor: pointer; }
 }
@@ -116,7 +116,7 @@
 @keyframes check-pop { 0% { transform: scale(.8); } 60% { transform: scale(1.16); } 100% { transform: scale(1); } }
 @keyframes pulse-soft { 0%,100% { opacity: .65; } 50% { opacity: 1; } }
 
-.app-shell { min-height: 100dvh; background: radial-gradient(circle at 8% 0%, rgba(255,182,39,.13), transparent 28rem), hsl(var(--background)); }
+.app-shell { min-height: 100dvh; overflow-x: clip; background: radial-gradient(circle at 8% 0%, rgba(255,182,39,.13), transparent 28rem), hsl(var(--background)); }
 .content-wrap { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding-bottom: 106px; }
 .page-enter { animation: rise-in .38s ease both; }
 .display-font { font-family: var(--app-font-serif); }
