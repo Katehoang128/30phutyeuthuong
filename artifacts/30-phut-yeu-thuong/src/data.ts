@@ -125,3 +125,13 @@ export const DAY_NAMES = ['Thứ 2','Thứ 3','Thứ 4','Thứ 5','Thứ 6','Th�
 export const RICE_PER_UNIT = 90;
 export const DAILY_TARGET = { kid:{ calories:1400, protein:25 }, elderly:{ calories:1800, protein:50 }, adult:{ calories:2000, protein:55 } };
 export const PANTRY_COST = { tietkiem:22000, vua:35000, thoaimai:50000 };
+
+export const SHOPPING_AFFILIATE_LINKS: Record<string, string> = {
+  'Gạo tẻ': 'https://s.shopee.vn/4qFhbBBQ6j',
+  'Tôm khô': 'https://s.shopee.vn/3B7TcCtTpm',
+  'Bánh mì': 'https://s.shopee.vn/4fwHP1hgar',
+  'Gạo nếp': 'https://s.shopee.vn/4B00oBcTxB',
+  'Đậu xanh': 'https://s.shopee.vn/6Al5BxSNNW',
+  'Bánh phở': 'https://s.shopee.vn/9peNYueAbZ',
+  'Bún gạo': 'https://s.shopee.vn/7ptJBHOqg8',
+};
