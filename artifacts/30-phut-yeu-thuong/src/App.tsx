@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Link, Router as WouterRouter, useLocation } from 'wouter';
-import { AlertCircle, ArrowUpRight, BadgeCheck, BookOpen, Camera, Check, ChefHat, ChevronDown, ChevronUp, CircleHelp, Clock3, Copy, Crown, ExternalLink, Heart, ImagePlus, Leaf, LoaderCircle, LockKeyhole, Mail, MessageCircle, Plus, Printer, QrCode, RefreshCw, Search, Send, Share2, ShoppingBasket, SlidersHorizontal, Smartphone, Sparkles, Trash2, Upload, Users, Utensils, WalletCards, X } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, BadgeCheck, BookOpen, CalendarDays, Camera, Check, ChefHat, ChevronDown, ChevronUp, CircleHelp, Clock3, Copy, Crown, ExternalLink, Heart, ImagePlus, Leaf, LoaderCircle, LockKeyhole, Mail, MessageCircle, Plus, Printer, QrCode, RefreshCw, Search, Send, Share2, ShoppingBasket, SlidersHorizontal, Smartphone, Sparkles, Trash2, Upload, Users, Utensils, WalletCards, X , Menu, User, Settings, ArrowRight } from 'lucide-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -9,6 +9,8 @@ import { trackEvent } from './analytics';
 import { BREAKFAST, CANH, DAM, DAILY_TARGET, DAY_NAMES, Dish, NUTRITION_PER_100G, PANTRY_COST, PRICE, RAU, RICE_PER_UNIT, SHOPPING_AFFILIATE_LINKS } from './data';
 
 const queryClient = new QueryClient();
+const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+function apiUrl(path: string) { return `${API_BASE_URL}${path}`; }
 type Budget = 'tietkiem' | 'vua' | 'thoaimai';
 type VegMode = '0' | '1' | '2';
 type HealingMode = 'stress' | 'hormone' | 'realfood';
@@ -127,6 +129,7 @@ const HEALING_MODE_TERMS: Record<Exclude<HealingMode, 'realfood'>, string[]> = {
   stress: ['omega-3', 'dha', 'ca hoi', 'ca basa', 'ca loc', 'yen mach', 'dau xanh', 'cai bo xoi', 'rau den', 'rau muong', 'rau lang', 'bong cai', 'nam'],
   hormone: ['dau hu', 'dau xanh', 'bong cai', 'bap cai', 'cai thao', 'cai bo xoi', 'rau den', 'nam'],
 };
+const LOW_CARB_INGREDIENTS = ['gao te', 'gao nep', 'banh mi', 'banh pho', 'bun gao', 'yen mach', 'khoai lang', 'khoai so', 'dau xanh', 'chuoi', 'duong'];
 function healingScore(dish: Dish, p: Preferences) {
   const text = normalize(`${dish.name} ${(dish.tags || []).join(' ')} ${dish.ing.map((item) => item[0]).join(' ')}`);
   let score = 0;
@@ -146,6 +149,17 @@ function healingScore(dish: Dish, p: Preferences) {
   }
   return score;
 }
+function matchesNutritionMode(dish: Dish, p: Preferences) {
+  const text = normalize(`${dish.name} ${(dish.tags || []).join(' ')} ${dish.ing.map((item) => item[0]).join(' ')}`);
+  const modes = [...new Set([...p.healingModes, ...(p.specialNutrition === 'none' ? [] : [p.specialNutrition as HealingMode])])];
+  if (modes.includes('lowcarb' as HealingMode) && LOW_CARB_INGREDIENTS.some((ingredient) => text.includes(ingredient))) return false;
+  if (modes.includes('who' as HealingMode) && !(dish.veg || dish.proteinGroup === 'fish' || dish.proteinGroup === 'plant' || dish.proteinGroup === 'soy')) return false;
+  const healingModes = modes.filter((mode): mode is HealingMode => mode === 'stress' || mode === 'hormone' || mode === 'realfood');
+  if (!healingModes.length) return true;
+  if (healingModes.includes('realfood') && (REAL_FOOD_BLOCKED_METHODS.has(dish.method || '') || dish.ing.some(([name]) => REAL_FOOD_BLOCKED_INGREDIENTS.includes(name)))) return false;
+  const preferenceMatch = healingModes.some((mode) => mode === 'realfood' || healingScore(dish, { ...p, healingModes: [mode], specialNutrition: 'none' }) > 0);
+  return preferenceMatch;
+}
 function allergyTerms(p: Preferences) {
   const aliases: Record<string, string[]> = { 'tom': ['tom', 'hai san', 'muc'], 'cua/hai san': ['cua', 'tom', 'muc', 'hai san'], 'trung': ['trung'], 'dau nanh': ['dau nanh', 'dau hu'], 'thit bo': ['thit bo'], 'mang': ['mang'], 'nam': ['nam'] };
   return [...p.allergies, ...p.allergyOther.split(',').map((x) => x.trim()).filter(Boolean)].flatMap((x) => aliases[normalize(x)] || [normalize(x)]);
@@ -164,7 +178,7 @@ function poolAllowed(pool: Dish[], p: Preferences) {
     if (dish.time > p.maxTime && dish !== BREAKFAST[0]) return false;
     if ((dish.costTier === 'cao' ? 3 : dish.costTier === 'vua' ? 2 : 1) > maxCost) return false;
     if (p.veg === '2' && !dish.veg) return false;
-    if ((p.healingModes.includes('realfood') || p.specialNutrition === 'realfood') && (REAL_FOOD_BLOCKED_METHODS.has(dish.method || '') || dish.ing.some(([name]) => REAL_FOOD_BLOCKED_INGREDIENTS.includes(name)))) return false;
+    if (!matchesNutritionMode(dish, p)) return false;
     return true;
   });
   if (!result.length) return [];
@@ -172,9 +186,12 @@ function poolAllowed(pool: Dish[], p: Preferences) {
     const score = (dish: Dish) => healingScore(dish, p) + favorites.reduce((sum, term) => sum + (normalize(`${dish.name} ${dish.ing.map((x) => x[0]).join(' ')}`).includes(term) ? 4 : 0), 0);
     return score(b) - score(a);
   });
-  if (p.healingModes.length === 0 && p.specialNutrition === 'none') return sorted;
-  const preferred = sorted.filter((dish) => healingScore(dish, p) > 0);
-  return preferred.length >= 3 ? preferred : sorted.slice(0, Math.max(3, Math.ceil(sorted.length / 2)));
+  return sorted;
+}
+function rotatePool(pool: Dish[], seed: number) {
+  if (pool.length < 2) return pool;
+  const offset = Math.abs(seed * 7 + pool.length) % pool.length;
+  return [...pool.slice(offset), ...pool.slice(0, offset)];
 }
 function pick(pool: Dish[], index: number, avoid: string[] = []) {
   const options = pool.filter((dish) => !avoid.includes(dish.name));
@@ -190,19 +207,22 @@ function aggregateCost(plan: DayPlan[], units: number, p: Preferences) {
   return sum + PANTRY_COST[p.budget];
 }
 function generatePlan(p: Preferences, seed = 0): DayPlan[] {
-  const breakfast = poolAllowed(BREAKFAST, p);
-  const dam = poolAllowed(DAM, p);
-  const rau = poolAllowed(RAU, p);
-  const canh = poolAllowed(CANH, p);
+  const breakfast = rotatePool(poolAllowed(BREAKFAST, p), seed);
+  const dam = rotatePool(poolAllowed(DAM, p), seed + 1);
+  const rau = rotatePool(poolAllowed(RAU, p), seed + 2);
+  const canh = rotatePool(poolAllowed(CANH, p), seed + 3);
   
   const usedMain = new Set<string>();
+  const usedMethods = new Set<string>();
   let previousProteinGroup = '';
   const chooseMain = (index: number, avoid: string[] = []) => {
     const unused = dam.filter((dish) => !usedMain.has(dish.name) && !avoid.includes(dish.name));
     const rotated = unused.filter((dish) => !previousProteinGroup || dish.proteinGroup !== previousProteinGroup);
-    const candidates = rotated.length ? rotated : unused;
+    const varied = rotated.filter((dish) => !usedMethods.has(dish.preparation || dish.method || ''));
+    const candidates = varied.length ? varied : rotated.length ? rotated : unused;
     const chosen = candidates[index % Math.max(1, candidates.length)] || dam[index % dam.length];
     usedMain.add(chosen.name);
+    usedMethods.add(chosen.preparation || chosen.method || '');
     previousProteinGroup = chosen.proteinGroup || '';
     return chosen;
   };
@@ -558,12 +578,15 @@ function App() {
 }
 
 function Shell() {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const [prefs, setPrefs] = useState(readStoredPreferences);
   const [seed, setSeed] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isPro, setIsPro] = useState(() => window.localStorage.getItem(PRO_STORAGE_KEY) === 'true');
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [globalPhone, setGlobalPhone] = useState(() => window.localStorage.getItem('30phut-user-phone') || '');
+  const [globalEmail, setGlobalEmail] = useState(() => window.localStorage.getItem('30phut-user-email') || '');
   const [plan, setPlan] = useState(() => readStoredPlan(prefs));
   const [bought, setBought] = useState<Set<string>>(() => {
     try {
@@ -706,7 +729,9 @@ function Shell() {
   else if (location === '/costs') page = <div className="space-y-5"><CostsPage shopping={shopping} prefs={prefs} totalCost={totalCost} plan={accessiblePlan} /><KitchenEquityCard weeklySaving={Math.max(0, (prefs.targetBudget || 1200000) - totalCost)} /></div>;
   else if (location === '/ask-ai') page = <AskAiPageV2 prefs={prefs} isPro={isPro} onUpgrade={() => openUpgrade('ai_limit')} />;
   else page = <HomePage plan={plan} isPro={isPro} onUpgrade={() => openUpgrade('locked_week')} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} totalCost={totalCost} forceBudget={forceBudget} budgetNotice={budgetNotice} swapNotice={swapNotice} onSwapDish={swapDish} />;
-  return <div className="app-shell grain"><header className="content-wrap pt-5 md:pt-8"><div className="flex items-start justify-between gap-4"><Link href="/" className="flex items-center gap-3 no-underline" data-testid="link-home"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_5px_0_hsl(13_72%_43%)]"><ChefHat size={23} strokeWidth={2.4} /></span><span><span className="display-font block text-xl font-bold tracking-tight text-primary">30 Phút</span><span className="block text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">Yêu thương</span></span></Link><div className="top-actions flex items-center gap-2">{isPro ? <span className="inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-xs font-bold text-accent-foreground"><Crown size={13} /> Thành viên Pro</span> : <button onClick={() => openUpgrade('header')} className="tactile inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-2 text-xs font-bold text-primary-foreground" data-testid="button-header-upgrade"><Crown size={13} /> Nâng cấp Pro</button>}<button onClick={() => window.print()} className="tactile flex h-10 w-10 items-center justify-center rounded-full border bg-card text-muted-foreground" aria-label="In trang" data-testid="button-print"><Printer size={17} /></button></div></div></header><main className="content-wrap page-enter">{page}</main><BlogFooter /><BottomNav location={location} /><InstallAppBanner /><ProUpgradeModal open={upgradeOpen} onClose={() => setUpgradeOpen(false)} onUnlocked={unlockPro} /></div>;
+  return <div className="app-shell grain"><header className="content-wrap pt-5 md:pt-8"><div className="flex items-start justify-between gap-4"><Link href="/" className="flex items-center gap-3 no-underline" data-testid="link-home"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_5px_0_hsl(13_72%_43%)]"><ChefHat size={23} strokeWidth={2.4} /></span><span><span className="display-font block text-xl font-bold tracking-tight text-primary">30 Phút</span><span className="block text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">Yêu thương</span></span></Link><div className="top-actions flex items-center gap-2">{isPro ? <span className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-xs font-bold text-accent-foreground"><Crown size={13} /> Thành viên Pro</span> : <button onClick={() => openUpgrade('header')} className="tactile hidden md:inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-2 text-xs font-bold text-primary-foreground" data-testid="button-header-upgrade"><Crown size={13} /> Nâng cấp Pro</button>}<button onClick={() => window.print()} className="tactile hidden md:flex h-10 w-10 items-center justify-center rounded-full border bg-card text-muted-foreground" aria-label="In trang" data-testid="button-print"><Printer size={17} /></button>
+<button onClick={() => setDrawerOpen(true)} className="tactile flex h-10 w-10 items-center justify-center rounded-full border bg-card text-foreground" data-testid="button-open-drawer" aria-label="Mở menu"><Menu size={19} /></button></div></div></header><main className="content-wrap page-enter">{page}</main><BlogFooter /><BottomNav location={location} /><InstallAppBanner /><MobileDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} isPro={isPro} phone={globalPhone} onUpgrade={() => { setDrawerOpen(false); openUpgrade('drawer'); }} onOpenSettings={() => { if (location !== '/') { setLocation('/'); } setSettingsOpen(true); }} />
+<ProUpgradeModal globalPhone={globalPhone} setGlobalPhone={setGlobalPhone} globalEmail={globalEmail} setGlobalEmail={setGlobalEmail} open={upgradeOpen} onClose={() => setUpgradeOpen(false)} onUnlocked={unlockPro} /></div>;
 }
 
 function InstallAppBanner() {
@@ -832,8 +857,32 @@ function NewsletterSignup() {
   </section>;
 }
 
-function ProUpgradeModal({ open, onClose, onUnlocked }: { open: boolean; onClose: () => void; onUnlocked: () => void }) {
-  const [phone, setPhone] = useState('');
+function ProUpgradeModal({ open, onClose, onUnlocked, globalPhone, setGlobalPhone, globalEmail, setGlobalEmail }: { open: boolean; onClose: () => void; onUnlocked: () => void; globalPhone?: string; setGlobalPhone?: (p: string) => void; globalEmail?: string; setGlobalEmail?: (email: string) => void }) {
+  const [phone, setPhone] = useState(globalPhone || '');
+  const [email, setEmail] = useState(globalEmail || '');
+
+  useEffect(() => {
+    if (phone && setGlobalPhone) {
+      setGlobalPhone(phone);
+      window.localStorage.setItem('30phut-user-phone', phone);
+    }
+  }, [phone, setGlobalPhone]);
+
+  useEffect(() => {
+    if (email && setGlobalEmail) {
+      setGlobalEmail(email);
+      window.localStorage.setItem('30phut-user-email', email);
+    }
+  }, [email, setGlobalEmail]);
+
+  useEffect(() => {
+    if (open && globalPhone && !phone) {
+      setPhone(globalPhone);
+    }
+    if (open && globalEmail && !email) {
+      setEmail(globalEmail);
+    }
+  }, [open, globalPhone, globalEmail]);
   const [qr, setQr] = useState<ProQr | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -841,6 +890,7 @@ function ProUpgradeModal({ open, onClose, onUnlocked }: { open: boolean; onClose
   useEffect(() => {
     if (!open) {
       setPhone('');
+      setEmail('');
       setQr(null);
       setLoading(false);
       setError('');
@@ -854,14 +904,40 @@ function ProUpgradeModal({ open, onClose, onUnlocked }: { open: boolean; onClose
       setError('Bạn hãy nhập số điện thoại từ 8 đến 15 số.');
       return;
     }
+
+    const trimmedEmail = email.trim();
+    if (trimmedEmail && !trimmedEmail.includes('@')) {
+      setError('Email không hợp lệ. Vui lòng kiểm tra lại email của bạn.');
+      return;
+    }
+
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('/api/pro/qr', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: normalizedPhone }) });
-      const data = await response.json() as ProQr & { error?: string };
-      if (!response.ok) throw new Error(data.error || 'Chưa tạo được mã QR.');
+      const response = await fetch(apiUrl('/api/pro/qr'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: normalizedPhone, email: trimmedEmail || undefined }) });
+      const rawText = await response.text();
+      let data: ProQr | { error?: string } | null = null;
+
+      if (rawText) {
+        try {
+          data = JSON.parse(rawText) as ProQr | { error?: string };
+        } catch {
+          throw new Error('Phản hồi từ máy chủ không hợp lệ.');
+        }
+      }
+
+      if (!response.ok) {
+        const errorMessage = data && typeof data === 'object' && 'error' in data && typeof data.error === 'string'
+          ? data.error
+          : 'Chưa tạo được mã QR.';
+        throw new Error(errorMessage);
+      }
+
+      if (!data || typeof data !== 'object' || !('qrUrl' in data) || !('transferContent' in data) || !('amount' in data)) {
+        throw new Error('Phản hồi từ máy chủ không hợp lệ.');
+      }
       setQr(data);
-      trackEvent('pro_qr_created', { plan: 'monthly_49000' });
+      trackEvent('pro_qr_created', { plan: 'monthly_49000', has_email: Boolean(trimmedEmail) });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Chưa tạo được mã QR. Bạn thử lại nhé.');
     } finally {
@@ -873,7 +949,7 @@ function ProUpgradeModal({ open, onClose, onUnlocked }: { open: boolean; onClose
     <div className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-[28px] bg-card p-5 shadow-2xl sm:rounded-[28px] md:p-7">
       <div className="flex items-start justify-between gap-4"><div><span className="inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.12em]"><Crown size={13} /> Thành viên Pro</span><h2 id="pro-upgrade-title" className="display-font mt-3 text-3xl font-bold">Nấu đủ cả tuần</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Chuyển khoản VietQR một lần, mở khóa ngay trên thiết bị này.</p></div><button onClick={onClose} className="rounded-full p-2 text-muted-foreground hover:bg-muted" aria-label="Đóng popup nâng cấp" data-testid="button-close-upgrade"><X size={19} /></button></div>
       <div className="mt-5 rounded-2xl bg-secondary/70 p-4"><div className="flex items-center justify-between gap-3"><span className="text-sm font-bold">Pro hàng tháng</span><span className="display-font text-2xl font-bold text-primary">{PRO_PRICE.toLocaleString('vi-VN')}đ</span></div><div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2"><span>✓ Thực đơn đủ 7 ngày</span><span>✓ Hỏi AI không giới hạn</span><span>✓ Công thức và danh sách đi chợ</span><span>✓ Hỗ trợ gia đình nhiều thành viên</span></div></div>
-      {!qr ? <div className="mt-5"><label className="text-xs font-bold text-muted-foreground"><span className="inline-flex items-center gap-1.5"><Smartphone size={14} /> Số điện thoại người dùng</span><input value={phone} onChange={(event) => setPhone(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && createQr()} placeholder="Ví dụ: 0912 345 678" inputMode="tel" className="mt-1.5 w-full rounded-xl border bg-background px-3 py-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-pro-phone" /></label><p className="mt-2 text-xs leading-5 text-muted-foreground">Nội dung chuyển khoản sẽ tự điền: <strong>PRO [Số điện thoại]</strong>.</p><button onClick={createQr} disabled={loading} className="tactile mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-[0_4px_0_hsl(13_72%_43%)] disabled:opacity-60" data-testid="button-create-vietqr">{loading ? <><LoaderCircle size={17} className="animate-spin" /> Đang tạo mã QR...</> : <><QrCode size={17} /> Hiện mã QR chuyển khoản</>}</button></div> : <div className="mt-5 text-center"><div className="mx-auto w-fit rounded-2xl border bg-white p-3 shadow-sm"><img src={qr.qrUrl} alt={`Mã VietQR chuyển khoản ${PRO_PRICE.toLocaleString('vi-VN')} đồng`} className="h-64 w-64 object-contain" /></div><p className="mt-3 text-sm font-bold">Quét mã bằng ứng dụng ngân hàng</p><p className="mt-1 text-xs text-muted-foreground">Số tiền: <strong className="text-foreground">{qr.amount.toLocaleString('vi-VN')}đ</strong> · Nội dung: <strong className="text-primary">{qr.transferContent}</strong></p><button onClick={() => { setQr(null); }} className="mt-3 text-xs font-bold text-primary underline" data-testid="button-change-pro-phone">Đổi số điện thoại</button><button onClick={onUnlocked} className="tactile mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(105_40%_45%)] px-4 py-3 text-sm font-bold text-white shadow-[0_4px_0_hsl(105_40%_35%)]" data-testid="button-confirm-pro"><Check size={17} /> Tôi đã chuyển khoản — mở khóa Pro</button><p className="mt-2 text-[11px] leading-5 text-muted-foreground">Sau khi chuyển khoản thành công, hãy bấm xác nhận để mở khóa trên thiết bị này.</p></div>}
+      {!qr ? <div className="mt-5 space-y-4"><label className="block text-xs font-bold text-muted-foreground"><span className="inline-flex items-center gap-1.5"><Mail size={14} /> Email người dùng</span><input value={email} onChange={(event) => setEmail(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && createQr()} placeholder="email@example.com" type="email" className="mt-1.5 w-full rounded-xl border bg-background px-3 py-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-pro-email" /></label><label className="block text-xs font-bold text-muted-foreground"><span className="inline-flex items-center gap-1.5"><Smartphone size={14} /> Số điện thoại người dùng</span><input value={phone} onChange={(event) => setPhone(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && createQr()} placeholder="Ví dụ: 0912 345 678" inputMode="tel" className="mt-1.5 w-full rounded-xl border bg-background px-3 py-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-pro-phone" /></label><p className="mt-2 text-xs leading-5 text-muted-foreground">Nội dung chuyển khoản sẽ tự điền: <strong>PRO [Số điện thoại]</strong>.</p><button onClick={createQr} disabled={loading} className="tactile mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-[0_4px_0_hsl(13_72%_43%)] disabled:opacity-60" data-testid="button-create-vietqr">{loading ? <><LoaderCircle size={17} className="animate-spin" /> Đang tạo mã QR...</> : <><QrCode size={17} /> Hiện mã QR chuyển khoản</>}</button></div> : <div className="mt-5 text-center"><div className="mx-auto w-fit rounded-2xl border bg-white p-3 shadow-sm"><img src={qr.qrUrl} alt={`Mã VietQR chuyển khoản ${PRO_PRICE.toLocaleString('vi-VN')} đồng`} className="h-64 w-64 object-contain" /></div><p className="mt-3 text-sm font-bold">Quét mã bằng ứng dụng ngân hàng</p><p className="mt-1 text-xs text-muted-foreground">Số tiền: <strong className="text-foreground">{qr.amount.toLocaleString('vi-VN')}đ</strong> · Nội dung: <strong className="text-primary">{qr.transferContent}</strong></p><button onClick={() => { setQr(null); }} className="mt-3 text-xs font-bold text-primary underline" data-testid="button-change-pro-phone">Đổi thông tin</button><button onClick={onUnlocked} className="tactile mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(105_40%_45%)] px-4 py-3 text-sm font-bold text-white shadow-[0_4px_0_hsl(105_40%_35%)]" data-testid="button-confirm-pro"><Check size={17} /> Tôi đã chuyển khoản — mở khóa Pro</button><p className="mt-2 text-[11px] leading-5 text-muted-foreground">Sau khi chuyển khoản thành công, hãy bấm xác nhận để mở khóa trên thiết bị này.</p></div>}
       {error && <p className="mt-3 rounded-xl bg-destructive/10 p-3 text-xs font-bold text-destructive" role="alert">{error}</p>}
     </div>
   </div>;
@@ -908,7 +984,22 @@ function DayCard({ day, index, open, setOpen, activeMeal, favorites, setFavorite
     </div>)}</div>}
   </article>;
 }
-function DishRow({ dish, favorite, onFavorite, onSwap }: { dish: Dish; favorite: boolean; onFavorite: () => void; onSwap?: () => void }) { const n = nutrition(dish); return <div className="flex items-start justify-between gap-3 rounded-xl bg-card/80 p-3"><div className="min-w-0"><p className="text-sm font-bold leading-5">{dish.name}</p><div className="mt-1 flex flex-wrap gap-1.5">{(dish.tags || []).slice(0, 2).map((tag) => <span key={tag} className="rounded-full border bg-background px-2 py-0.5 text-[10px] font-bold text-muted-foreground">{tag}</span>)}<span className="rounded-full bg-[hsl(43_100%_61%/.2)] px-2 py-0.5 text-[10px] font-bold text-foreground">{Math.round(n.cal)} kcal</span></div></div><div className="flex shrink-0 items-center gap-1"><button onClick={onSwap} className="flex h-8 items-center gap-1 rounded-full border bg-card px-2 text-[11px] font-bold text-primary" aria-label="🔄 Đổi món này" data-testid={`button-swap-${dish.name}`} title="🔄 Đổi món này"><RefreshCw size={13} /> <span className="hidden sm:inline">Đổi món</span></button><button onClick={onFavorite} className={`flex h-8 w-8 items-center justify-center rounded-full border ${favorite ? 'border-primary bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`} aria-label="Đánh dấu món yêu thích" data-testid={`button-favorite-${dish.name}`}><Heart size={15} fill={favorite ? 'currentColor' : 'none'} /></button></div></div>; }
+function cookingSteps(dish: Dish) {
+  const ingredients = dish.ing.map(([name]) => name).join(', ');
+  const preparation = dish.preparation || 'boil';
+  const steps: Record<string, string[]> = {
+    steam: [`Sơ chế ${ingredients.toLowerCase()}, ướp nhẹ với gia vị.`, `Cho nguyên liệu vào xửng, hấp trong khoảng ${dish.time} phút.`, 'Kiểm tra chín mềm, rắc hành hoặc tiêu và dùng nóng.'],
+    boil: [`Rửa sạch và cắt ${ingredients.toLowerCase()} vừa ăn.`, `Đun sôi nước, cho nguyên liệu vào luộc trong khoảng ${dish.time} phút.`, 'Vớt ra để ráo, nêm lại hoặc dùng kèm nước chấm.'],
+    braise: [`Sơ chế ${ingredients.toLowerCase()} và ướp với gia vị trong 5 phút.`, 'Phi thơm hành tỏi, cho nguyên liệu vào đảo săn rồi thêm một ít nước.', `Kho lửa nhỏ khoảng ${dish.time} phút đến khi thấm vị.`],
+    stirfry: [`Sơ chế ${ingredients.toLowerCase()} và để ráo.`, 'Làm nóng chảo với một ít dầu, cho nguyên liệu lâu chín vào trước.', `Xào nhanh trên lửa vừa khoảng ${dish.time} phút, nêm vừa ăn rồi tắt bếp.`],
+    soup: [`Rửa sạch và cắt ${ingredients.toLowerCase()} vừa ăn.`, 'Đun sôi nước, cho nguyên liệu chính vào nấu chín rồi hớt bọt.', `Cho rau hoặc nguyên liệu còn lại vào, nêm vừa ăn và nấu thêm khoảng ${Math.max(3, dish.time - 5)} phút.`],
+    porridge: [`Vo gạo, sơ chế ${ingredients.toLowerCase()} và cắt nhỏ.`, 'Nấu gạo với nước đến khi nở mềm, khuấy đều để cháo không bén nồi.', `Cho nguyên liệu còn lại vào nấu thêm khoảng ${dish.time} phút, nêm nhạt rồi dùng ấm.`],
+    grill: [`Sơ chế ${ingredients.toLowerCase()} và ướp nhẹ với gia vị.`, 'Làm nóng nồi chiên không dầu hoặc lò nướng ở 180°C.', `Nướng trong khoảng ${dish.time} phút, trở mặt giữa chừng và kiểm tra chín kỹ.`],
+    raw: [`Rửa sạch ${ingredients.toLowerCase()} và để thật ráo.`, 'Cắt hoặc trộn các nguyên liệu theo khẩu vị.', 'Dùng ngay; nếu có nguyên liệu đóng gói, làm nóng theo hướng dẫn trên bao bì.'],
+  };
+  return steps[preparation] || steps.boil;
+}
+function DishRow({ dish, favorite, onFavorite, onSwap }: { dish: Dish; favorite: boolean; onFavorite: () => void; onSwap?: () => void }) { const n = nutrition(dish); const steps = cookingSteps(dish); return <div className="rounded-xl bg-card/80 p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-sm font-bold leading-5">{dish.name}</p><div className="mt-1 flex flex-wrap gap-1.5">{(dish.tags || []).slice(0, 2).map((tag) => <span key={tag} className="rounded-full border bg-background px-2 py-0.5 text-[10px] font-bold text-muted-foreground">{tag}</span>)}<span className="rounded-full bg-[hsl(43_100%_61%/.2)] px-2 py-0.5 text-[10px] font-bold text-foreground">{Math.round(n.cal)} kcal</span></div></div><div className="flex shrink-0 items-center gap-1"><button onClick={onSwap} className="flex h-8 items-center gap-1 rounded-full border bg-card px-2 text-[11px] font-bold text-primary" aria-label="🔄 Đổi món này" data-testid={`button-swap-${dish.name}`} title="🔄 Đổi món này"><RefreshCw size={13} /> <span className="hidden sm:inline">Đổi món</span></button><button onClick={onFavorite} className={`flex h-8 w-8 items-center justify-center rounded-full border ${favorite ? 'border-primary bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`} aria-label="Đánh dấu món yêu thích" data-testid={`button-favorite-${dish.name}`}><Heart size={15} fill={favorite ? 'currentColor' : 'none'} /></button></div></div><details className="mt-3 border-t pt-2"><summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-bold text-primary"><ChefHat size={14} /> Hướng dẫn nấu</summary><ol className="mt-2 space-y-1.5 pl-5 text-xs leading-5 text-muted-foreground">{steps.map((step, index) => <li key={`${dish.name}-step-${index}`} className="pl-1">{step}</li>)}</ol></details></div>; }
 function TodayCard({ day, prefs }: { day: DayPlan; prefs: Preferences }) {
   const total = mealCalories(day, prefs);
   const activeCount = Object.values(prefs.selectedMeals).filter(Boolean).length;
@@ -1114,7 +1205,7 @@ function AskAiPageV2({ prefs, isPro, onUpgrade }: { prefs: Preferences; isPro: b
     setLoading('fridge');
     setError('');
     try {
-      const response = await fetch('/api/ai/fridge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ imageData, mimeType: imageMime, safety }) });
+      const response = await fetch(apiUrl('/api/ai/fridge'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ imageData, mimeType: imageMime, safety }) });
       const data = await response.json() as FridgeAiResult & { error?: string };
       if (!response.ok) throw new Error(data.error || 'AI chưa trả lời được.');
       setFridgeResult(data);
@@ -1137,7 +1228,7 @@ function AskAiPageV2({ prefs, isPro, onUpgrade }: { prefs: Preferences; isPro: b
     setLoading('recipe');
     setError('');
     try {
-      const response = await fetch('/api/ai/recipe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dishName, safety }) });
+      const response = await fetch(apiUrl('/api/ai/recipe'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dishName, safety }) });
       const data = await response.json() as RecipeAiResult & { error?: string };
       if (!response.ok) throw new Error(data.error || 'AI chưa trả lời được.');
       setRecipeResult(data);
@@ -1188,6 +1279,92 @@ function RecipeResultCard({ result }: { result: RecipeAiResult }) {
   return <section className="paper-card p-5 md:p-6"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-primary">Công thức 1 khẩu phần</p><h2 className="display-font mt-1 text-3xl font-bold">{result.dishName}</h2></div><span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-secondary px-3 py-2 text-xs font-bold"><Clock3 size={14} /> Nhạt · ít dầu</span></div><div className="mt-5 grid gap-5 lg:grid-cols-[.8fr_1.2fr]"><div><p className="text-xs font-bold uppercase tracking-[.12em] text-muted-foreground">Định lượng nguyên liệu</p><ul className="mt-3 divide-y rounded-2xl border bg-background">{result.ingredients.map((ingredient) => <li key={ingredient.name} className="flex justify-between gap-3 px-3 py-2.5 text-sm"><span>{ingredient.name}</span><span className="font-bold text-primary">{ingredient.amount}</span></li>)}</ul><div className="mt-4"><NutritionSummaryCard nutrition={result.nutrition} /></div></div><div><p className="text-xs font-bold uppercase tracking-[.12em] text-muted-foreground">Các bước nấu</p><ol className="mt-3 space-y-3">{result.steps.map((step, index) => <li key={step} className="flex gap-3 text-sm leading-6"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-primary text-xs font-bold text-primary-foreground">{index + 1}</span><span>{step}</span></li>)}</ol></div></div>{result.safetyNotes.length > 0 && <div className="mt-5 rounded-2xl bg-secondary/70 p-4"><p className="text-xs font-bold uppercase tracking-[.12em] text-secondary-foreground">Lưu ý cho nhà mình</p><ul className="mt-2 space-y-1 text-sm leading-5">{result.safetyNotes.map((note) => <li key={note}>• {note}</li>)}</ul></div>}</section>;
 }
 
-function BottomNav({ location }: { location: string }) { const items = [{ href: '/', label: 'Thực đơn', icon: ChefHat }, { href: '/shopping', label: 'Đi chợ', icon: ShoppingBasket }, { href: '/costs', label: 'Chi phí', icon: WalletCards }, { href: '/ask-ai', label: 'Hỏi AI', icon: Sparkles }]; return <nav className="bottom-nav safe-bottom fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 px-2 pt-2 shadow-[0_-8px_24px_rgba(86,51,22,.08)] backdrop-blur md:sticky md:bottom-auto md:mx-auto md:mt-4 md:w-[min(680px,calc(100%-40px))] md:rounded-2xl md:border md:px-3 md:py-2"><div className="mx-auto grid max-w-xl grid-cols-4 gap-1">{items.map(({ href, label, icon: Icon }) => { const active = href === '/' ? location === '/' : location.startsWith(href); return <Link key={href} href={href} className={`flex flex-col items-center gap-1 rounded-xl px-2 py-2 text-[10px] font-bold transition-colors ${active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`} data-testid={`link-nav-${label}`}><Icon size={18} strokeWidth={active ? 2.6 : 2} /><span>{label}</span></Link>; })}</div></nav>; }
+function BottomNav({ location }: { location: string }) { const items = [{ href: '/', label: 'Thực đơn', icon: CalendarDays }, { href: '/shopping', label: 'Đi chợ', icon: ShoppingBasket }, { href: '/costs', label: 'Tài Chính', icon: WalletCards }, { href: '/ask-ai', label: 'Bếp AI', icon: Sparkles }]; return <nav aria-label="Điều hướng chính" className="bottom-nav safe-bottom fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 px-2 pt-2 shadow-[0_-8px_24px_rgba(86,51,22,.08)] backdrop-blur md:hidden"><div className="mx-auto grid max-w-xl grid-cols-4 gap-1">{items.map(({ href, label, icon: Icon }) => { const active = href === '/' ? location === '/' : location.startsWith(href); return <Link key={href} href={href} aria-current={active ? 'page' : undefined} className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1.5 py-2 text-[10px] font-bold transition-all duration-200 ${active ? 'scale-105 bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted'}`} data-testid={`link-nav-${label}`}><Icon size={18} strokeWidth={active ? 2.6 : 2} /><span>{label}</span></Link>; })}</div></nav>; }
 
 export default App;
+
+
+function MobileDrawer({ open, onClose, isPro, phone, onUpgrade, onOpenSettings }: { open: boolean, onClose: () => void, isPro: boolean, phone: string, onUpgrade: () => void, onOpenSettings: () => void }) {
+  useEffect(() => {
+    if (!open) return;
+    {
+      document.body.style.overflow = 'hidden';
+      const handleEscape = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+      document.addEventListener('keydown', handleEscape);
+      return () => {
+        document.body.style.overflow = '';
+        document.removeEventListener('keydown', handleEscape);
+      };
+    }
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label="Menu ứng dụng">
+      <div className="absolute inset-0 bg-foreground/40 backdrop-blur-sm transition-opacity animate-in fade-in duration-300" onClick={onClose} aria-hidden="true" data-testid="drawer-backdrop" />
+      <div className="relative flex w-full max-w-[280px] flex-col bg-card shadow-2xl animate-in slide-in-from-right duration-300">
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <span className="display-font text-lg font-bold text-primary">Tài khoản</span>
+          <button onClick={onClose} className="rounded-full p-2 text-muted-foreground hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary" aria-label="Đóng menu" data-testid="button-close-drawer">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-4 py-5">
+          <div className="mb-6 flex items-center gap-3 rounded-2xl bg-secondary/30 p-4 border border-secondary">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <User size={22} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-bold text-foreground">
+                {phone ? phone : 'Chưa cập nhật SĐT'}
+              </p>
+              <div className="mt-1">
+                {isPro ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent-foreground">
+                    <Crown size={12} /> VIP Pro
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Gói miễn phí
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <button onClick={() => { onClose(); onOpenSettings(); }} className="flex min-h-[44px] w-full items-center justify-between rounded-xl p-3 hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary" data-testid="button-drawer-settings">
+              <span className="flex items-center gap-3 text-sm font-bold text-foreground"><Settings size={18} className="text-muted-foreground" /> Khẩu vị & Dị ứng</span>
+              <ArrowRight size={16} className="text-muted-foreground" />
+            </button>
+            
+            {!isPro && (
+              <button onClick={() => { onClose(); onUpgrade(); }} className="flex min-h-[44px] w-full items-center justify-between rounded-xl bg-[linear-gradient(135deg,hsl(13_80%_56%/.1),hsl(43_100%_61%/.15))] p-3 text-primary hover:bg-[linear-gradient(135deg,hsl(13_80%_56%/.15),hsl(43_100%_61%/.2))] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary" data-testid="button-drawer-upgrade">
+                <span className="flex items-center gap-3 text-sm font-bold"><Crown size={18} /> Nâng cấp Pro 49k</span>
+                <ArrowRight size={16} />
+              </button>
+            )}
+            
+            <a
+              href="https://zalo.me/g/2obzl3fbbbaienldhm7m"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex min-h-[44px] w-full items-center justify-between rounded-xl p-3 hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              data-testid="link-drawer-zalo"
+              aria-label="Tham gia nhóm Zalo VIP"
+            >
+              <span className="flex items-center gap-3 text-sm font-bold text-foreground"><MessageCircle size={18} className="text-blue-500" /> Nhóm Zalo VIP</span>
+              <ExternalLink size={16} className="text-muted-foreground" />
+            </a>
+            
+            <a href="https://35to53.com" target="_blank" rel="noopener noreferrer" className="flex min-h-[44px] w-full items-center justify-between rounded-xl p-3 hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary" data-testid="link-drawer-blog">
+              <span className="flex items-center gap-3 text-sm font-bold text-foreground"><BookOpen size={18} className="text-muted-foreground" /> Blog 35to53.com</span>
+              <ExternalLink size={16} className="text-muted-foreground" />
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
