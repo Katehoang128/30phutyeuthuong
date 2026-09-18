@@ -39,9 +39,18 @@ const NEWSLETTER_STORAGE_KEY = '30phut-newsletter-email';
 const PREFS_STORAGE_KEY = '30phut-preferences';
 const PLAN_STORAGE_KEY = '30phut-plan';
 const BOUGHT_STORAGE_KEY = '30phut-bought';
+const DEVICE_ID_STORAGE_KEY = '30phut-device-id';
 
 function currentMonth() {
   return new Date().toISOString().slice(0, 7);
+}
+
+function getDeviceId() {
+  const existing = window.localStorage.getItem(DEVICE_ID_STORAGE_KEY);
+  if (existing) return existing;
+  const deviceId = crypto.randomUUID();
+  window.localStorage.setItem(DEVICE_ID_STORAGE_KEY, deviceId);
+  return deviceId;
 }
 
 function vietnamDayName(now = new Date()) {
@@ -587,6 +596,7 @@ function Shell() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [globalPhone, setGlobalPhone] = useState(() => window.localStorage.getItem('30phut-user-phone') || '');
   const [globalEmail, setGlobalEmail] = useState(() => window.localStorage.getItem('30phut-user-email') || '');
+  const [deviceId] = useState(getDeviceId);
   const [plan, setPlan] = useState(() => readStoredPlan(prefs));
   const [bought, setBought] = useState<Set<string>>(() => {
     try {
@@ -615,6 +625,29 @@ function Shell() {
   useEffect(() => {
     window.localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(prefs));
   }, [prefs]);
+  useEffect(() => {
+    let active = true;
+    fetch(apiUrl(`/api/profile/${deviceId}`))
+      .then((response) => response.ok ? response.json() : null)
+      .then((profile: { email?: string | null; phone?: string | null; preferences?: Partial<Preferences> } | null) => {
+        if (!active || !profile) return;
+        if (profile.email) setGlobalEmail(profile.email);
+        if (profile.phone) setGlobalPhone(profile.phone);
+        if (profile.preferences) setPrefs((current) => ({ ...current, ...profile.preferences }));
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [deviceId]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      fetch(apiUrl('/api/profile'), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId, email: globalEmail, phone: globalPhone, preferences: prefs }),
+      }).catch(() => undefined);
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [deviceId, globalEmail, globalPhone, prefs]);
   useEffect(() => {
     window.localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(plan));
   }, [plan]);
