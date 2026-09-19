@@ -486,6 +486,67 @@ function quantityEditorValue(value: { qty: number; unit?: string }) {
   return Number.isInteger(value.qty) ? value.qty : Number(value.qty.toFixed(1));
 }
 
+type BagItem = { id: string; name: string; qty: number; unit: 'g' | 'kg'; pricePerKg: number; group: 'dam' | 'rau' };
+const BAG_QUICK_CHIPS = ['Thịt heo', 'Thịt bò', 'Cá', 'Tôm', 'Rau củ', 'Đậu hũ', 'Trứng gà', 'Thịt gà'];
+// Ordered most-specific first: "cà chua"/"cà rốt" normalize to "ca ..." same as "cá" (fish), so veggie phrases must win first.
+const BAG_CLASSIFY_RULES: [RegExp, 'dam' | 'rau', number][] = [
+  [/ca chua/, 'rau', 25000],
+  [/ca rot/, 'rau', 20000],
+  [/ca tim/, 'rau', 18000],
+  [/bi do|bi xanh/, 'rau', 15000],
+  [/dau hu|dau phu/, 'dam', 16000],
+  [/dau bap|dau que/, 'rau', 22000],
+  [/thit bo|\bbo\b/, 'dam', 260000],
+  [/thit heo|\bheo\b|suon|ba roi/, 'dam', 120000],
+  [/\bga\b|uc ga|dui ga/, 'dam', 70000],
+  [/\btom\b/, 'dam', 180000],
+  [/\bmuc\b/, 'dam', 150000],
+  [/\bca\b|basa|dieu hong|ca loc|ca hoi/, 'dam', 110000],
+  [/trung/, 'dam', 35000],
+  [/rau|cai|bau|muop|mong toi|gia do|xa lach|sup lo|bong cai|kho qua/, 'rau', 15000],
+];
+function classifyBagIngredient(name: string): { group: 'dam' | 'rau'; pricePerKg: number } {
+  const normalized = normalize(name);
+  for (const [pattern, group, pricePerKg] of BAG_CLASSIFY_RULES) if (pattern.test(normalized)) return { group, pricePerKg };
+  return { group: 'rau', pricePerKg: 15000 };
+}
+// Smart Text Parser: "1kg thịt heo, 500g rau muống, 2 quả cà chua" -> structured items.
+function parseBagText(text: string): { name: string; qty: number; unit: 'g' | 'kg' }[] {
+  return text.split(/[,;\n]+/).map((chunk) => chunk.trim()).filter(Boolean).map((chunk) => {
+    const match = chunk.match(/^(\d+(?:[.,]\d+)?)\s*(kg|g|gam|gr|lạng|lang|con|quả|qua|củ|cu|bó|bo|mớ|mo|trái|trai)?\s*(.+)$/i);
+    if (!match) return { name: chunk, qty: 300, unit: 'g' as const };
+    const num = parseFloat(match[1].replace(',', '.'));
+    const unitRaw = normalize(match[2] || '');
+    const name = match[3].trim();
+    if (unitRaw === 'kg') return { name, qty: num, unit: 'kg' as const };
+    if (unitRaw === 'lang') return { name, qty: num * 100, unit: 'g' as const };
+    if (['con', 'qua', 'cu', 'bo', 'mo', 'trai'].includes(unitRaw)) return { name, qty: num * (normalize(name).includes('trung') ? 50 : 200), unit: 'g' as const };
+    if (unitRaw === 'g' || unitRaw === 'gam' || unitRaw === 'gr') return { name, qty: num, unit: 'g' as const };
+    return { name, qty: num <= 20 ? num * 200 : num, unit: 'g' as const };
+  });
+}
+function bagItemCost(item: BagItem) { return item.pricePerKg * (item.unit === 'kg' ? item.qty : item.qty / 1000); }
+type BagMeal = { label: string; dam: BagItem[]; rau: BagItem[]; canh: BagItem[]; cost: number };
+// AI Meal Pairing Engine: splits a free-form bag of groceries into balanced Bữa Trưa / Bữa Tối trays
+// (Đạm - Rau - Canh), flags any missing food group, and estimates cost per meal.
+function pairBagIntoMeals(items: BagItem[]) {
+  const meals: BagMeal[] = [{ label: 'Bữa Trưa', dam: [], rau: [], canh: [], cost: 0 }, { label: 'Bữa Tối', dam: [], rau: [], canh: [], cost: 0 }];
+  items.filter((item) => item.group === 'dam').forEach((item, index) => meals[index % 2].dam.push(item));
+  items.filter((item) => item.group === 'rau').forEach((item, index) => {
+    const meal = meals[index % 2];
+    (meal.rau.length === 0 ? meal.rau : meal.canh).push(item);
+  });
+  const suggestions: string[] = [];
+  meals.forEach((meal) => {
+    meal.cost = [...meal.dam, ...meal.rau, ...meal.canh].reduce((sum, item) => sum + bagItemCost(item), 0);
+    if (meal.dam.length === 0) suggestions.push(`${meal.label}: thiếu đạm — gợi ý mua thêm Đậu hũ (~8.000 đ) để đủ chất hơn`);
+    if (meal.rau.length === 0) suggestions.push(`${meal.label}: thiếu rau — gợi ý mua thêm Rau muống (~10.000 đ) để đủ chất xơ`);
+    if (meal.canh.length === 0) suggestions.push(`${meal.label}: thiếu món canh — gợi ý mua thêm Bí đỏ (~12.000 đ) để nấu canh`);
+  });
+  const totalCost = items.reduce((sum, item) => sum + bagItemCost(item), 0);
+  return { meals, suggestions, totalCost, avgPerMeal: totalCost / meals.length };
+}
+
 function BudgetProgress({ totalCost, targetBudget, className = "" }: { totalCost: number, targetBudget: number, className?: string }) {
   const percent = targetBudget > 0 ? (totalCost / targetBudget) * 100 : 0;
   const isOver = totalCost > targetBudget;
@@ -1214,6 +1275,7 @@ function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomIte
     <section className="paper-card border-[hsl(105_40%_45%/.3)] bg-secondary/45 p-4 md:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-[hsl(105_33%_30%)]">Mua tươi sống tiện hơn</p><p className="mt-1 text-sm font-semibold">Đặt một lần, giao đủ rau củ và thịt cá cho cả tuần.</p></div><a href={BACH_HOA_XANH_AFFILIATE_URL} target="_blank" rel="nofollow sponsored noopener" className="tactile inline-flex items-center justify-center gap-2 rounded-xl bg-[hsl(105_40%_45%)] px-4 py-3 text-xs font-bold text-white shadow-[0_4px_0_hsl(105_40%_35%)]" data-testid="link-bach-hoa-xanh"><ShoppingBasket size={16} /> 🛒 Đặt giao tận nhà qua Bách Hóa Xanh <ExternalLink size={13} /></a></div>
     </section>
+    <CustomBagAiCard />
     <section className="paper-card p-5"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-muted-foreground">Tự thêm</p><h2 className="display-font mt-1 text-2xl font-bold">Món cần nhớ</h2></div><Plus size={20} className="text-primary" /></div><div className="mt-4 flex gap-2"><input value={newItem} onChange={(event) => setNewItem(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && add()} placeholder="Ví dụ: khăn giấy, nước rửa rau" className="min-w-0 flex-1 rounded-xl border bg-background px-3 py-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-custom-shopping" /><button onClick={add} className="tactile rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground" data-testid="button-add-shopping"><Plus size={16} /></button></div><div className="mt-3 space-y-2">{customItems.length === 0 ? <p className="rounded-xl border border-dashed p-4 text-center text-xs text-muted-foreground">Chưa có món tự thêm. Danh sách này chỉ của riêng nhà mình.</p> : customItems.map((item, index) => <div key={`${item.name}-${index}`} className={`flex items-center justify-between rounded-xl border bg-background px-3 py-3 ${item.bought ? 'opacity-50' : ''}`}><button onClick={() => setCustomItems(customItems.map((entry, i) => i === index ? { ...entry, bought: !entry.bought } : entry))} className="flex min-w-0 items-center gap-3 text-left text-sm font-bold" data-testid={`button-toggle-custom-${index}`}><span className={`flex h-5 w-5 items-center justify-center rounded-full border ${item.bought ? 'border-[hsl(105_40%_45%)] bg-[hsl(105_40%_45%)] text-white' : ''}`}>{item.bought && <Check size={12} />}</span><span className={item.bought ? 'line-through' : ''}>{item.name}</span></button><button onClick={() => setCustomItems(customItems.filter((_, i) => i !== index))} className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-destructive" aria-label="Xóa món tự thêm" data-testid={`button-remove-custom-${index}`}><Trash2 size={15} /></button></div>)}</div></section>
   </div>;
 }
@@ -1224,6 +1286,69 @@ function ShoppingGroupV2({ title, subtitle, items, bought, toggle, updateQuantit
   return <section className="shopping-group paper-card overflow-hidden !mb-2">
     <button type="button" onClick={() => setOpen(!open)} className="shopping-group-header flex w-full items-center justify-between gap-3 border-b bg-muted/45 px-3 py-2.5 text-left" aria-expanded={open} data-testid={`button-toggle-shopping-group-${kind}`}><div className="min-w-0"><h2 className="truncate text-sm font-bold">{kind === 'fresh' ? '🥩 ' : '🧂 '}{title} <span className="font-medium text-muted-foreground">({items.length} món · {money(groupTotal)})</span></h2><p className="mt-0.5 truncate text-[10px] text-muted-foreground">{subtitle}</p></div><ChevronDown size={17} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} /></button>
     {open && (items.length === 0 ? <p className="p-4 text-sm text-muted-foreground">Tuần này chưa có món thuộc nhóm này.</p> : <div className="shopping-items-grid p-2">{items.map(([name, value]) => { const done = bought.has(name); const affiliateUrl = SHOPPING_AFFILIATE_LINKS[name]; return <div key={name} className={`shopping-item flex min-h-[42px] items-center gap-1.5 rounded-lg border px-2 py-1.5 transition-opacity ${done ? 'shopping-item-done' : 'bg-card'}`}><input type="checkbox" checked={done} onChange={() => toggle(name)} className="h-4 w-4 shrink-0 accent-[hsl(105_40%_45%)]" data-testid={`checkbox-have-${name}`} aria-label={`Nhà đã có ${name}`} /><span className={`min-w-0 flex-1 truncate text-xs font-bold ${done ? 'line-through' : ''}`}>{name}</span><span className="shrink-0 text-[10px] font-bold text-muted-foreground">{displayQuantity(value)}</span><span className="shrink-0 text-[10px] font-bold text-primary">{money(priceFor(name, value.qty))}</span><input type="number" min="0" step={value.unit ? '0.1' : '5'} value={quantityEditorValue(value)} onChange={(event) => updateQuantity(name, event.target.value)} className="shopping-quantity" aria-label={`Số lượng ${name}`} data-testid={`input-quantity-${name}`} />{kind === 'dry' && affiliateUrl && <a href={affiliateUrl} target="_blank" rel="nofollow sponsored noopener" className="shopping-link-icon" aria-label={`Mua ${name} trên Shopee`} data-testid={`link-shopee-${name}`}><ExternalLink size={13} /></a>}</div>; })}</div>)}
+  </section>;
+}
+
+function CustomBagAiCard() {
+  const [open, setOpen] = useState(true);
+  const [bagItems, setBagItems] = useState<BagItem[]>([]);
+  const [bagText, setBagText] = useState('');
+  const [result, setResult] = useState<ReturnType<typeof pairBagIntoMeals> | null>(null);
+
+  const addItem = (name: string, qty = 300, unit: 'g' | 'kg' = 'g') => {
+    const { group, pricePerKg } = classifyBagIngredient(name);
+    setBagItems((current) => [...current, { id: `bag-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name, qty, unit, pricePerKg, group }]);
+    setResult(null);
+  };
+  const addFromText = () => {
+    const parsed = parseBagText(bagText);
+    if (!parsed.length) return;
+    parsed.forEach((item) => addItem(item.name, item.qty, item.unit));
+    setBagText('');
+  };
+  const updateItem = (id: string, patch: Partial<BagItem>) => {
+    setBagItems((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
+    setResult(null);
+  };
+  const removeItem = (id: string) => {
+    setBagItems((current) => current.filter((item) => item.id !== id));
+    setResult(null);
+  };
+  const bagTotal = bagItems.reduce((sum, item) => sum + bagItemCost(item), 0);
+  const runAiPairing = () => { if (bagItems.length) setResult(pairBagIntoMeals(bagItems)); };
+
+  return <section className="paper-card overflow-hidden !mb-2 bag-ai-card">
+    <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center justify-between gap-3 text-left" aria-expanded={open} data-testid="button-toggle-bag-ai">
+      <div className="min-w-0"><h2 className="truncate text-sm font-bold">🛒 Tự Nhập Túi Đồ Đã Mua / Sẽ Mua</h2><p className="mt-0.5 truncate text-[10px] text-muted-foreground">Nhập tự do hoặc chọn nhanh, để AI ghép mâm cơm đủ chất</p></div>
+      <ChevronDown size={17} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+    </button>
+    {open && <div className="mt-3 space-y-3">
+      <div className="flex gap-2">
+        <input value={bagText} onChange={(event) => setBagText(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && addFromText()} placeholder="VD: 1kg thịt heo, 500g rau muống, 2 quả cà chua" className="min-w-0 flex-1 rounded-xl border bg-background px-3 py-2.5 text-xs outline-none ring-primary focus:ring-2" data-testid="input-bag-text" />
+        <button onClick={addFromText} className="tactile shrink-0 rounded-xl bg-primary px-3 py-2.5 text-xs font-bold text-primary-foreground" aria-label="Thêm từ văn bản" data-testid="button-add-bag-text"><Plus size={15} /></button>
+      </div>
+      <div className="flex flex-wrap gap-1.5">{BAG_QUICK_CHIPS.map((chip) => <button key={chip} onClick={() => addItem(chip)} className="bag-chip" data-testid={`button-chip-${chip}`}>+ {chip}</button>)}</div>
+      {bagItems.length > 0 && <div className="space-y-1.5">{bagItems.map((item) => <div key={item.id} className="bag-item-row">
+        <span className="bag-item-name truncate">{item.group === 'dam' ? '🍖' : '🥬'} {item.name}</span>
+        <input type="number" min="0" value={item.qty} onChange={(event) => updateItem(item.id, { qty: Math.max(0, Number(event.target.value) || 0) })} className="bag-item-input" aria-label={`Khối lượng ${item.name}`} data-testid={`input-bag-qty-${item.id}`} />
+        <button type="button" onClick={() => updateItem(item.id, { unit: item.unit === 'kg' ? 'g' : 'kg' })} className="bag-item-unit-toggle" data-testid={`button-bag-unit-${item.id}`}>{item.unit}</button>
+        <input type="number" min="0" value={item.pricePerKg} onChange={(event) => updateItem(item.id, { pricePerKg: Math.max(0, Number(event.target.value) || 0) })} className="bag-item-input" aria-label={`Đơn giá ${item.name} mỗi kg`} data-testid={`input-bag-price-${item.id}`} />
+        <span className="shrink-0 text-[10px] font-bold text-primary">{money(bagItemCost(item))}</span>
+        <button onClick={() => removeItem(item.id)} className="shrink-0 rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive" aria-label={`Xóa ${item.name}`} data-testid={`button-remove-bag-${item.id}`}><Trash2 size={13} /></button>
+      </div>)}</div>}
+      {bagItems.length > 0 && <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl bg-secondary/50 px-3 py-2.5">
+        <span className="text-xs font-bold">Tổng túi đồ: <span className="text-primary">{money(bagTotal)}</span></span>
+        <button onClick={runAiPairing} className="bag-ai-button tactile inline-flex items-center gap-1.5" data-testid="button-ai-pair-meals"><Sparkles size={14} /> ⚡ AI Ghép Mâm Cơm Đủ Chất</button>
+      </div>}
+      {result && <div className="space-y-2.5 pt-1">
+        <div className="grid gap-2.5 sm:grid-cols-2">{result.meals.map((meal) => <div key={meal.label} className="bag-meal-card">
+          <div className="flex items-center justify-between gap-2"><span className="bag-meal-title">{meal.label}</span><span className="bag-meal-cost">{money(meal.cost)}</span></div>
+          {[...meal.dam.map((item) => ({ ...item, tag: 'Đạm' })), ...meal.rau.map((item) => ({ ...item, tag: 'Rau' })), ...meal.canh.map((item) => ({ ...item, tag: 'Canh' }))].map((item) => <div key={item.id} className="bag-dish-row"><span className="truncate">{item.tag} · {item.name}</span><span className="shrink-0 font-bold">{money(bagItemCost(item))}</span></div>)}
+        </div>)}</div>
+        <p className="text-[11px] font-bold text-muted-foreground">Chi phí trung bình mỗi bữa: <span className="text-primary">{money(result.avgPerMeal)}</span></p>
+        {result.suggestions.length > 0 && <div className="space-y-1.5">{result.suggestions.map((tip) => <div key={tip} className="bag-suggestion"><Sparkles size={12} className="mt-0.5 shrink-0" />{tip}</div>)}</div>}
+      </div>}
+    </div>}
   </section>;
 }
 

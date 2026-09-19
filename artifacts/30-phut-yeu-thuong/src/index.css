@@ -183,6 +183,20 @@
 .meal-guide-content { display: grid; gap: 10px; margin-top: 8px; color: #6C757D; font-size: 11px; font-weight: 400; line-height: 17px; }
 .meal-guide-content strong { color: #2B2D42; }
 .meal-guide-content ol { margin: 3px 0 0 16px; }
+.bag-ai-card { border-color: rgba(58, 107, 76, .16); background: #FAF9F5; }
+.bag-chip { border-radius: 999px; border: 1px solid rgba(58, 107, 76, .22); background: #F0F4F1; padding: 6px 12px; color: #3A6B4C; font-size: 11px; font-weight: 700; white-space: nowrap; transition: background-color .15s ease; }
+.bag-chip:hover { background: #E8F0EC; }
+.bag-item-row { display: flex; min-width: 0; align-items: center; gap: 6px; border-radius: 12px; border: 1px solid rgba(43, 45, 66, .08); background: #fff; padding: 7px 9px; }
+.bag-item-name { min-width: 0; flex: 1; color: #2B2D42; font-size: 12px; font-weight: 700; }
+.bag-item-input { width: 46px; flex: 0 0 auto; border: 0; border-bottom: 1px solid rgba(43, 45, 66, .16); background: transparent; padding: 1px; text-align: right; color: #2B2D42; font-size: 11px; font-weight: 700; outline: none; }
+.bag-item-unit-toggle { flex: 0 0 auto; border-radius: 8px; background: #F0F4F1; padding: 3px 6px; color: #3A6B4C; font-size: 10px; font-weight: 700; }
+.bag-ai-button { border-radius: 12px; background: #3A6B4C; padding: 11px 16px; color: #fff; font-size: 12px; font-weight: 700; box-shadow: 0 4px 0 #2c5039; white-space: nowrap; }
+.bag-ai-button:active { transform: translateY(2px); box-shadow: 0 2px 0 #2c5039; }
+.bag-meal-card { min-width: 0; border-radius: 12px; border: 1px solid rgba(58, 107, 76, .18); background: #fff; padding: 11px; }
+.bag-meal-title { color: #3A6B4C; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.bag-meal-cost { color: #2B2D42; font-size: 15px; font-weight: 700; }
+.bag-dish-row { display: flex; min-width: 0; justify-content: space-between; gap: 6px; border-top: 1px dashed rgba(43, 45, 66, .1); padding: 5px 0; color: #6C757D; font-size: 11px; font-weight: 600; }
+.bag-suggestion { display: flex; align-items: flex-start; gap: 6px; border-radius: 10px; background: rgba(217, 107, 67, .09); padding: 8px 10px; color: #9f4426; font-size: 11px; font-weight: 600; line-height: 15px; }
 .tactile { transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease; }
 .tactile:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(110, 84, 58, .11); }
 .tactile:active { transform: translateY(1px); }
