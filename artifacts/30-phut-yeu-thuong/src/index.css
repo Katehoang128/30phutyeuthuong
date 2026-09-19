@@ -35,40 +35,40 @@
 }
 
 :root {
-  --background: 39 67% 96%;
-  --foreground: 24 30% 17%;
-  --border: 37 43% 84%;
-  --input: 38 41% 82%;
-  --ring: 13 80% 56%;
-  --card: 42 100% 99%;
-  --card-foreground: 24 30% 17%;
-  --card-border: 37 43% 86%;
-  --popover: 42 100% 99%;
-  --popover-foreground: 24 30% 17%;
-  --primary: 13 80% 56%;
-  --primary-foreground: 42 100% 99%;
-  --secondary: 102 31% 88%;
-  --secondary-foreground: 105 33% 25%;
-  --muted: 39 44% 91%;
-  --muted-foreground: 25 18% 42%;
-  --accent: 43 100% 61%;
-  --accent-foreground: 24 30% 17%;
-  --destructive: 0 65% 49%;
-  --destructive-foreground: 42 100% 99%;
-  --sidebar: 42 100% 99%;
-  --sidebar-foreground: 24 30% 17%;
-  --sidebar-border: 37 43% 86%;
-  --sidebar-primary: 13 80% 56%;
-  --sidebar-primary-foreground: 42 100% 99%;
-  --sidebar-accent: 102 31% 88%;
-  --sidebar-accent-foreground: 105 33% 25%;
-  --sidebar-ring: 13 80% 56%;
+  --background: 30 62% 97%;
+  --foreground: 24 28% 18%;
+  --border: 36 32% 88%;
+  --input: 36 32% 92%;
+  --ring: 154 25% 42%;
+  --card: 0 0% 100%;
+  --card-foreground: 24 28% 18%;
+  --card-border: 34 32% 90%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 24 28% 18%;
+  --primary: 154 25% 42%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 146 38% 92%;
+  --secondary-foreground: 154 25% 28%;
+  --muted: 38 42% 95%;
+  --muted-foreground: 26 16% 42%;
+  --accent: 15 72% 70%;
+  --accent-foreground: 24 28% 18%;
+  --destructive: 0 72% 62%;
+  --destructive-foreground: 0 0% 100%;
+  --sidebar: 0 0% 100%;
+  --sidebar-foreground: 24 28% 18%;
+  --sidebar-border: 34 32% 90%;
+  --sidebar-primary: 154 25% 42%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 146 38% 92%;
+  --sidebar-accent-foreground: 154 25% 28%;
+  --sidebar-ring: 154 25% 42%;
   --app-font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
   --app-font-serif: 'Fraunces', Georgia, serif;
   --app-font-mono: 'DM Sans', ui-monospace, monospace;
-  --radius: 1rem;
-  --elevate-1: rgba(75, 45, 24, .05);
-  --elevate-2: rgba(75, 45, 24, .09);
+  --radius: 1.25rem;
+  --elevate-1: rgba(92, 74, 62, .05);
+  --elevate-2: rgba(92, 74, 62, .09);
   --tracking-normal: 0em;
   --spacing: .25rem;
 }
@@ -116,17 +116,18 @@
 @keyframes check-pop { 0% { transform: scale(.8); } 60% { transform: scale(1.16); } 100% { transform: scale(1); } }
 @keyframes pulse-soft { 0%,100% { opacity: .65; } 50% { opacity: 1; } }
 
-.app-shell { min-height: 100dvh; overflow-x: clip; background: radial-gradient(circle at 8% 0%, rgba(255,182,39,.13), transparent 28rem), hsl(var(--background)); }
+.app-shell { min-height: 100dvh; overflow-x: clip; background: radial-gradient(circle at 8% 0%, rgba(248,199,169,.28), transparent 26rem), linear-gradient(180deg, #fffdfb 0%, #f9f6f2 100%); }
 .content-wrap { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding-bottom: 106px; }
 .page-enter { animation: rise-in .38s ease both; }
 .display-font { font-family: var(--app-font-serif); }
-.paper-card { background: hsl(var(--card)); border: 1px solid hsl(var(--card-border)); box-shadow: 0 12px 30px rgba(86, 51, 22, .07); border-radius: 24px; }
+.paper-card { background: hsl(var(--card)); border: 1px solid hsl(var(--card-border)); box-shadow: 0 16px 32px rgba(110, 84, 58, .06); border-radius: 28px; }
 .tactile { transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease; }
-.tactile:hover { transform: translateY(-2px); box-shadow: 0 9px 18px rgba(86, 51, 22, .12); }
+.tactile:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(110, 84, 58, .11); }
 .tactile:active { transform: translateY(1px); }
 .grain { position: relative; isolation: isolate; }
 .grain::after { content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .035; z-index: 50; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.4'/%3E%3C/svg%3E"); }
 .safe-bottom { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+header.content-wrap { position: sticky; top: 0; z-index: 50; padding-top: max(18px, env(safe-area-inset-top)); background: rgba(255, 253, 250, 0.7); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 
 @media (min-width: 768px) {
   .content-wrap { width: min(1120px, calc(100% - 64px)); padding-bottom: 44px; }
