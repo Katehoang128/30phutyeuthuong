@@ -203,6 +203,11 @@
 .bag-day-name { color: #3A6B4C; font-size: 11px; font-weight: 700; }
 .bag-day-dish { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #2B2D42; font-size: 11px; font-weight: 600; }
 .bag-day-dish em { color: #6C757D; font-style: normal; }
+.bhx-cart-card { border-color: rgba(0, 136, 72, .16); }
+.bhx-cart-row { display: flex; min-width: 0; align-items: center; gap: 8px; border-radius: 10px; padding: 5px 4px; }
+.bhx-cart-row-done { opacity: .55; }
+.bhx-cta { border-radius: 12px; background: #008848; padding: 12px 16px; color: #fff; font-size: 13px; font-weight: 700; box-shadow: 0 4px 0 #00652f; }
+.bhx-cta:active { transform: translateY(2px); box-shadow: 0 2px 0 #00652f; }
 .tactile { transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease; }
 .tactile:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(110, 84, 58, .11); }
 .tactile:active { transform: translateY(1px); }
