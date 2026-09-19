@@ -515,6 +515,25 @@ const DRY_ITEMS = ['Gạo','Bún','Bánh','Yến mạch','Đậu xanh','Tôm kh�
 function shoppingGroup(name: string): 'fresh' | 'dry' {
   return DRY_ITEMS.some((item) => name.includes(item)) ? 'dry' : 'fresh';
 }
+// Sub-groups "Thực phẩm tươi sống" by ingredient type (thịt/cá/rau củ/...) instead of one flat grid —
+// matches how a quầy chợ or BHX aisle is actually laid out, easier to scan while shopping.
+const FRESH_GROUP_RAU_CU_INDEX = 2;
+const FRESH_GROUP_ORDER: { label: string; icon: string; keywords: string[] }[] = [
+  { label: 'Thịt', icon: '🥩', keywords: ['Thịt heo', 'Sườn non', 'Ức gà', 'đùi gà', 'Gan heo', 'Chả lụa'] },
+  { label: 'Cá & Hải sản', icon: '🐟', keywords: ['Cá basa', 'Cá lóc', 'Cá diêu hồng', 'Cá hồi', 'Chả cá', 'Tôm tươi', 'Mực tươi'] },
+  { label: 'Rau, Củ & Trái cây', icon: '🥬', keywords: [] },
+  { label: 'Trứng, Đậu hũ & Sữa', icon: '🥚', keywords: ['Trứng gà', 'Trứng cút', 'Đậu hũ', 'Sữa tươi'] },
+  { label: 'Gia vị & Nấm tươi', icon: '🧄', keywords: ['Gừng', 'Hành lá', 'Sả', 'Hành tím', 'Lá chanh', 'Nấm rơm', 'nấm bào ngư', 'Chanh'] },
+];
+function groupFreshItems(items: [string, { qty: number; unit?: string }][]) {
+  const buckets = FRESH_GROUP_ORDER.map((group) => ({ ...group, items: [] as typeof items }));
+  items.forEach((item) => {
+    const [name] = item;
+    const matchIndex = FRESH_GROUP_ORDER.findIndex((group, index) => index !== FRESH_GROUP_RAU_CU_INDEX && group.keywords.some((keyword) => name.includes(keyword)));
+    buckets[matchIndex === -1 ? FRESH_GROUP_RAU_CU_INDEX : matchIndex].items.push(item);
+  });
+  return buckets.filter((bucket) => bucket.items.length > 0);
+}
 // Meal-to-Cart Converter: turns the dishes on a chốt (finalized) mâm cơm into a fresh-only BHX checklist.
 function dailyFreshIngredients(dishes: { dish: Dish; slot: DishSlot }[], units: number): { name: string; qty: number; unit?: string }[] {
   const totals: Record<string, { qty: number; unit?: string }> = {};
@@ -1514,10 +1533,15 @@ function ShoppingDayView({ plan, prefs, favorites, setFavorites, onSwap }: { pla
 function ShoppingGroupV2({ title, subtitle, items, bought, toggle, updateQuantity, kind }: { title: string; subtitle: string; items: [string, { qty: number; unit?: string }][]; bought: Set<string>; toggle: (name: string) => void; updateQuantity: (name: string, value: string) => void; kind: 'fresh' | 'dry' }) {
   const [open, setOpen] = useState(true);
   const groupTotal = items.reduce((sum, [name, value]) => sum + priceFor(name, value.qty), 0);
+  const subGroups = kind === 'fresh' ? groupFreshItems(items) : null;
   return <section className="shopping-group paper-card overflow-hidden !mb-2">
     <button type="button" onClick={() => setOpen(!open)} className="shopping-group-header flex w-full items-center justify-between gap-3 border-b bg-muted/45 px-3 py-2.5 text-left" aria-expanded={open} data-testid={`button-toggle-shopping-group-${kind}`}><div className="min-w-0"><h2 className="truncate text-sm font-bold">{kind === 'fresh' ? '🥩 ' : '🧂 '}{title} <span className="font-medium text-muted-foreground">({items.length} món · {money(groupTotal)})</span></h2><p className="mt-0.5 truncate text-[10px] text-muted-foreground">{subtitle}</p></div><ChevronDown size={17} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} /></button>
-    {open && (items.length === 0 ? <p className="p-4 text-sm text-muted-foreground">Tuần này chưa có món thuộc nhóm này.</p> : <div className="shopping-items-grid p-2">{items.map(([name, value]) => { const done = bought.has(name); const affiliateUrl = SHOPPING_AFFILIATE_LINKS[name]; return <div key={name} className={`shopping-item flex min-h-[42px] items-center gap-1.5 rounded-lg border px-2 py-1.5 transition-opacity ${done ? 'shopping-item-done' : 'bg-card'}`}><input type="checkbox" checked={done} onChange={() => toggle(name)} className="h-4 w-4 shrink-0 accent-[hsl(113_40%_45%)]" data-testid={`checkbox-have-${name}`} aria-label={`Nhà đã có ${name}`} /><span className={`min-w-0 flex-1 truncate text-xs font-bold ${done ? 'line-through' : ''}`}>{name}</span><span className="shrink-0 text-[10px] font-bold text-muted-foreground">{displayQuantity(value)}</span><span className="shrink-0 text-[10px] font-bold text-primary">{money(priceFor(name, value.qty))}</span><input type="number" min="0" step={value.unit ? '0.1' : '5'} value={quantityEditorValue(value)} onChange={(event) => updateQuantity(name, event.target.value)} className="shopping-quantity" aria-label={`Số lượng ${name}`} data-testid={`input-quantity-${name}`} />{kind === 'dry' && affiliateUrl && <a href={affiliateUrl} target="_blank" rel="nofollow sponsored noopener" className="shopping-link-icon" aria-label={`Mua ${name} trên Shopee`} data-testid={`link-shopee-${name}`}><ExternalLink size={13} /></a>}</div>; })}</div>)}
+    {open && (items.length === 0 ? <p className="p-4 text-sm text-muted-foreground">Tuần này chưa có món thuộc nhóm này.</p> : subGroups ? <div className="space-y-3 p-2">{subGroups.map((sub) => { const subTotal = sub.items.reduce((sum, [name, value]) => sum + priceFor(name, value.qty), 0); return <div key={sub.label}><p className="px-1 pb-1.5 text-[11px] font-bold text-muted-foreground">{sub.icon} {sub.label} <span className="font-medium">({sub.items.length} món · {money(subTotal)})</span></p><div className="shopping-items-grid">{sub.items.map(([name, value]) => <ShoppingItemRow key={name} name={name} value={value} done={bought.has(name)} toggle={toggle} updateQuantity={updateQuantity} kind={kind} />)}</div></div>; })}</div> : <div className="shopping-items-grid p-2">{items.map(([name, value]) => <ShoppingItemRow key={name} name={name} value={value} done={bought.has(name)} toggle={toggle} updateQuantity={updateQuantity} kind={kind} />)}</div>)}
   </section>;
+}
+function ShoppingItemRow({ name, value, done, toggle, updateQuantity, kind }: { name: string; value: { qty: number; unit?: string }; done: boolean; toggle: (name: string) => void; updateQuantity: (name: string, value: string) => void; kind: 'fresh' | 'dry' }) {
+  const affiliateUrl = SHOPPING_AFFILIATE_LINKS[name];
+  return <div className={`shopping-item flex min-h-[42px] items-center gap-1.5 rounded-lg border px-2 py-1.5 transition-opacity ${done ? 'shopping-item-done' : 'bg-card'}`}><input type="checkbox" checked={done} onChange={() => toggle(name)} className="h-4 w-4 shrink-0 accent-[hsl(113_40%_45%)]" data-testid={`checkbox-have-${name}`} aria-label={`Nhà đã có ${name}`} /><span className={`min-w-0 flex-1 truncate text-xs font-bold ${done ? 'line-through' : ''}`}>{name}</span><span className="shrink-0 text-[10px] font-bold text-muted-foreground">{displayQuantity(value)}</span><span className="shrink-0 text-[10px] font-bold text-primary">{money(priceFor(name, value.qty))}</span><input type="number" min="0" step={value.unit ? '0.1' : '5'} value={quantityEditorValue(value)} onChange={(event) => updateQuantity(name, event.target.value)} className="shopping-quantity" aria-label={`Số lượng ${name}`} data-testid={`input-quantity-${name}`} />{kind === 'dry' && affiliateUrl && <a href={affiliateUrl} target="_blank" rel="nofollow sponsored noopener" className="shopping-link-icon" aria-label={`Mua ${name} trên Shopee`} data-testid={`link-shopee-${name}`}><ExternalLink size={13} /></a>}</div>;
 }
 
 function CustomBagAiCard({ prefs }: { prefs: Preferences }) {
