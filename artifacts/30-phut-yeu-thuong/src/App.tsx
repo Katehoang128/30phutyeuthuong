@@ -519,7 +519,7 @@ function shoppingGroup(name: string): 'fresh' | 'dry' {
 // matches how a quầy chợ or BHX aisle is actually laid out, easier to scan while shopping.
 const FRESH_GROUP_RAU_CU_INDEX = 2;
 const FRESH_GROUP_ORDER: { label: string; icon: string; keywords: string[] }[] = [
-  { label: 'Thịt', icon: '🥩', keywords: ['Thịt heo', 'Sườn non', 'Ức gà', 'đùi gà', 'Gan heo', 'Chả lụa'] },
+  { label: 'Thịt', icon: '🥩', keywords: ['Thịt heo', 'Thịt bò', 'Sườn non', 'Ức gà', 'đùi gà', 'Gan heo', 'Chả lụa', 'Lòng heo'] },
   { label: 'Cá & Hải sản', icon: '🐟', keywords: ['Cá basa', 'Cá lóc', 'Cá diêu hồng', 'Cá hồi', 'Chả cá', 'Tôm tươi', 'Mực tươi'] },
   { label: 'Rau, Củ & Trái cây', icon: '🥬', keywords: [] },
   { label: 'Trứng, Đậu hũ & Sữa', icon: '🥚', keywords: ['Trứng gà', 'Trứng cút', 'Đậu hũ', 'Sữa tươi'] },
@@ -1307,6 +1307,7 @@ const DISH_THUMB_BY_PROTEIN: Record<string, { emoji: string; bg: string }> = {
   fish: { emoji: '🐟', bg: '#DCEEF7' },
   seafood: { emoji: '🦐', bg: '#FDEBD8' },
   pork: { emoji: '🥩', bg: '#FBE3D3' },
+  beef: { emoji: '🥩', bg: '#F3D6CE' },
   chicken: { emoji: '🍗', bg: '#FDF1D3' },
   egg: { emoji: '🥚', bg: '#FFF3CD' },
   soy: { emoji: '🍄', bg: '#EFE6F7' },
