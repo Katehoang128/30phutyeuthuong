@@ -1066,6 +1066,7 @@ function SettingsModal({ prefs, setOpen, updatePrefs, saveSettings }: { prefs: P
 }
 
 function ZeroScrollMealPlanner({ plan, prefs, favorites, setFavorites, onSwap }: { plan: DayPlan[]; prefs: Preferences; favorites: Set<string>; setFavorites: (value: Set<string>) => void; onSwap: (dayIndex: number, slot: DishSlot) => void }) {
+  const [, setLocation] = useLocation();
   const [selectedDay, setSelectedDay] = useState(plan[0]?.day || DAY_NAMES[0]);
   const [selectedMeal, setSelectedMeal] = useState<'lunch' | 'dinner' | 'breakfast'>('lunch');
   useEffect(() => {
@@ -1098,7 +1099,7 @@ function ZeroScrollMealPlanner({ plan, prefs, favorites, setFavorites, onSwap }:
     <div className="paper-card !mb-0 p-3" data-testid="zero-scroll-meal-panel">
       <div className="mb-3 flex items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.14em] text-primary">{selectedDay}</p><h2 className="display-font text-xl font-bold">{mealLabel}</h2></div><span className="rounded-full bg-secondary px-3 py-1.5 text-[11px] font-bold text-secondary-foreground">{day ? `${dishes.length} món` : 'Đang khóa'}</span></div>
       {day ? <MealGrid dishes={dishes} favorites={favorites} setFavorites={setFavorites} onSwap={(slot) => onSwap(planIndex, slot)} /> : <div className="rounded-xl bg-secondary/60 p-5 text-center"><p className="text-sm font-bold">Ngày này đang được khóa</p><p className="mt-1 text-xs text-muted-foreground">Mở khóa Pro để xem trọn thực đơn 7 ngày.</p></div>}
-      <Link href="/shopping" className="warm-cta mt-3 flex w-full items-center justify-center gap-2 text-center no-underline" data-testid="button-meal-shopping"><ShoppingBasket size={17} /> Xem Danh Sách Đi Chợ Cho {selectedMeal === 'dinner' ? 'Bữa Tối' : mealLabel}</Link>
+      <button type="button" onClick={() => { const target = document.getElementById('bhx-daily-cart'); target ? target.scrollIntoView({ behavior: 'smooth', block: 'start' }) : setLocation('/shopping'); }} className="warm-cta mt-3 flex w-full items-center justify-center gap-2 text-center" data-testid="button-meal-shopping"><ShoppingBasket size={17} /> Xem Danh Sách Đi Chợ Cho {selectedMeal === 'dinner' ? 'Bữa Tối' : mealLabel}</button>
     </div>
     {day && <BhxDailyCartCard key={`${selectedDay}-${selectedMeal}`} dishes={dishes} units={units} mealLabel={mealLabel} selectedDay={selectedDay} />}
   </section>;
@@ -1107,13 +1108,41 @@ function ZeroScrollMealPlanner({ plan, prefs, favorites, setFavorites, onSwap }:
 function BhxDailyCartCard({ dishes, units, mealLabel, selectedDay }: { dishes: { dish: Dish; slot: DishSlot }[]; units: number; mealLabel: string; selectedDay: string }) {
   const ingredients = useMemo(() => dailyFreshIngredients(dishes, units), [dishes, units]);
   const [haveAlready, setHaveAlready] = useState<Set<string>>(new Set());
+  const [copied, setCopied] = useState(false);
   if (ingredients.length === 0) return null;
   const toggleHave = (name: string) => setHaveAlready((current) => { const next = new Set(current); next.has(name) ? next.delete(name) : next.add(name); return next; });
   const cartTotal = ingredients.reduce((sum, item) => haveAlready.has(item.name) ? sum : sum + priceFor(item.name, item.qty), 0);
   const freeshipGap = 100000 - cartTotal;
+  const shareDailyList = async () => {
+    const text = [
+      `🛒 DANH SÁCH ĐI CHỢ - ${mealLabel.toUpperCase()} ${selectedDay.toUpperCase()} - 30 PHÚT YÊU THƯƠNG`,
+      ...ingredients.map((item) => `${haveAlready.has(item.name) ? '✅' : '⬜'} ${item.name}: ${displayQuantity(item)}${haveAlready.has(item.name) ? ' (nhà đã có sẵn)' : ''} — ${money(priceFor(item.name, item.qty))}`),
+      `\n📦 Chi phí nguyên liệu tươi BHX dự toán: ~${money(cartTotal)}`,
+      `Mở ứng dụng: ${new URL('/', window.location.href).href}`,
+    ].join('\n');
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        textarea.remove();
+      }
+      setCopied(true);
+      trackEvent('bhx_daily_cart_shared', { day: selectedDay, meal: mealLabel, total: cartTotal });
+      window.setTimeout(() => setCopied(false), 2200);
+    } catch {
+      setCopied(false);
+    }
+  };
 
-  return <section className="paper-card !mb-0 bhx-cart-card p-3.5" data-testid="card-bhx-daily-cart">
-    <div className="mb-2 flex items-center justify-between gap-2"><h3 className="text-xs font-bold">🧾 Nguyên liệu tươi cho {mealLabel} {selectedDay}</h3><span className="shrink-0 text-[10px] font-bold text-muted-foreground">{ingredients.length} món</span></div>
+  return <section id="bhx-daily-cart" className="paper-card !mb-0 bhx-cart-card p-3.5" data-testid="card-bhx-daily-cart">
+    <div className="mb-2 flex items-center justify-between gap-2"><h3 className="min-w-0 truncate text-xs font-bold">🧾 Nguyên liệu tươi cho {mealLabel} {selectedDay}</h3><div className="flex shrink-0 items-center gap-1.5"><span className="text-[10px] font-bold text-muted-foreground">{ingredients.length} món</span><button type="button" onClick={shareDailyList} className="tactile inline-flex items-center gap-1 rounded-full border border-[hsl(43_31%_85%)] bg-white px-2 py-1 text-[10px] font-bold text-primary" aria-label="Gửi danh sách nguyên liệu ngày qua Zalo" data-testid="button-bhx-daily-share">{copied ? <Check size={11} /> : <Share2 size={11} />}{copied ? 'Đã copy' : 'Gửi Zalo'}</button></div></div>
     <div className="space-y-1">{ingredients.map((item) => { const checked = haveAlready.has(item.name); return <label key={item.name} className={`bhx-cart-row ${checked ? 'bhx-cart-row-done' : ''}`}>
       <input type="checkbox" checked={checked} onChange={() => toggleHave(item.name)} className="h-4 w-4 shrink-0" style={{ accentColor: '#008848' }} aria-label={`Nhà đã có sẵn ${item.name}`} data-testid={`checkbox-bhx-have-${item.name}`} />
       <span className={`min-w-0 flex-1 truncate text-xs font-bold ${checked ? 'text-muted-foreground line-through' : ''}`}>{item.name}</span>
