@@ -175,6 +175,7 @@
 .grain::after { content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .035; z-index: 50; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.4'/%3E%3C/svg%3E"); }
 .safe-bottom { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
 .bottom-nav { left: 8px; right: 8px; bottom: 8px; border: 1px solid rgba(58, 107, 76, .1); border-radius: 20px; background: #FFFFFF; box-shadow: 0 -4px 20px rgba(0, 0, 0, .08); }
+.desktop-sidebar { display: none; }
 .nav-item { position: relative; border-radius: 12px; color: #6C757D; font-size: 10px; font-weight: 500; transition: all .25s ease-in-out; }
 .nav-item:hover { background: #F0F4F1; color: #3A6B4C; }
 .nav-item-active { transform: translateY(-2px); background: #E8F0EC; color: #3A6B4C; font-weight: 700; }
@@ -192,6 +193,22 @@
   .bottom-nav > div { max-width: 1000px; }
   .content-wrap { padding-bottom: 100px; }
   .shopping-items-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1024px) {
+  .desktop-sidebar { position: fixed; inset: 0 auto 0 0; z-index: 110; display: flex; width: 240px; flex-direction: column; border-right: 1px solid #E5E7EB; background: #FAF9F5; padding: 24px 16px; }
+  .desktop-sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px 28px; color: #2B2D42; }
+  .desktop-sidebar-mark { display: flex; height: 40px; width: 40px; align-items: center; justify-content: center; border-radius: 13px; background: #3A6B4C; color: #fff; }
+  .desktop-sidebar-brand strong { display: block; font-family: var(--app-font-serif); font-size: 18px; line-height: 20px; }
+  .desktop-sidebar-brand small { display: block; color: #6C757D; font-size: 10px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+  .desktop-sidebar-nav { display: grid; gap: 8px; }
+  .desktop-sidebar-item { display: flex; align-items: center; gap: 12px; border-radius: 12px; padding: 12px; color: #2B2D42; font-size: 14px; font-weight: 600; text-decoration: none; transition: all .25s ease-in-out; }
+  .desktop-sidebar-item:hover { background: #F0F4F1; }
+  .desktop-sidebar-item-active { background: #3A6B4C; color: #fff; font-weight: 700; }
+  .site-header { width: calc(100% - 240px); margin-left: 240px; }
+  .site-header-brand { display: none; }
+  main.content-wrap { width: min(1120px, calc(100% - 304px)); margin-left: 240px; margin-right: 64px; padding-bottom: 44px; }
+  .bottom-nav { display: none; }
 }
 
 
