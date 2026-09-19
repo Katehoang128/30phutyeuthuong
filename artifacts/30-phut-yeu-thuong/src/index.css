@@ -140,6 +140,17 @@
 .settings-switch-on { background: var(--primary-green); }
 .settings-switch-on span { transform: translateX(16px); }
 .settings-modal-panel { border: 1px solid rgba(43, 45, 66, .08); }
+.pro-sales-backdrop { animation: pro-fade-in .2s ease both; }
+.pro-sales-sheet { animation: pro-slide-up .28s ease both; }
+.pro-plan-card { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid rgba(43, 45, 66, .1); border-radius: 14px; padding: 13px 14px; text-align: left; color: var(--text-main); }
+.pro-plan-selected { border-color: var(--accent-orange); background: rgba(217, 107, 67, .08); box-shadow: 0 0 0 1px rgba(217, 107, 67, .18); }
+.pro-plan-badge { border-radius: 999px; background: var(--accent-orange); padding: 4px 8px; color: #fff; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.pro-payment-cta, [data-testid="button-create-vietqr"], [data-testid="button-confirm-pro"] { min-height: 50px; border-radius: 999px; background: var(--accent-orange); color: #fff; font-size: 15px; font-weight: 700; padding: 12px 20px; }
+[data-testid="button-create-vietqr"], [data-testid="button-confirm-pro"] { font-size: 0; }
+[data-testid="button-create-vietqr"]::after { content: '⚡ THANH TOÁN VIETQR AUTOMATION'; font-size: 15px; }
+[data-testid="button-confirm-pro"]::after { content: '✅ Đã chuyển khoản xong'; font-size: 15px; }
+@keyframes pro-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pro-slide-up { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
 .budget-alert-low { background: rgba(217, 107, 67, .14); color: #9f4426; }
 .budget-alert-high { background: rgba(58, 107, 76, .12); color: var(--primary-green); }
 .budget-alert-balanced { background: rgba(58, 107, 76, .08); color: var(--primary-green); }

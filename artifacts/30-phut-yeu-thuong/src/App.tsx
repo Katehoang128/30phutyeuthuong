@@ -34,6 +34,7 @@ const presetBudgets: Record<Budget, number> = { tietkiem: 840_000, vua: 1_200_00
 const FREE_DAY_LIMIT = 3;
 const FREE_AI_LIMIT = 3;
 const PRO_PRICE = 49_000;
+const PRO_ANNUAL_PRICE = 399_000;
 const PRO_STORAGE_KEY = '30phut-pro-unlocked';
 const AI_USAGE_STORAGE_KEY = '30phut-ai-usage';
 const NEWSLETTER_STORAGE_KEY = '30phut-newsletter-email';
@@ -963,6 +964,7 @@ function NewsletterSignup() {
 function ProUpgradeModal({ open, onClose, onUnlocked, globalPhone, setGlobalPhone, globalEmail, setGlobalEmail }: { open: boolean; onClose: () => void; onUnlocked: () => void; globalPhone?: string; setGlobalPhone?: (p: string) => void; globalEmail?: string; setGlobalEmail?: (email: string) => void }) {
   const [phone, setPhone] = useState(globalPhone || '');
   const [email, setEmail] = useState(globalEmail || '');
+  const [selectedPlan, setSelectedPlan] = useState<'annual' | 'monthly'>('annual');
 
   useEffect(() => {
     if (phone && setGlobalPhone) {
@@ -995,6 +997,7 @@ function ProUpgradeModal({ open, onClose, onUnlocked, globalPhone, setGlobalPhon
       setPhone('');
       setEmail('');
       setQr(null);
+      setSelectedPlan('annual');
       setLoading(false);
       setError('');
     }
@@ -1017,7 +1020,7 @@ function ProUpgradeModal({ open, onClose, onUnlocked, globalPhone, setGlobalPhon
     setLoading(true);
     setError('');
     try {
-      const response = await fetch(apiUrl('/api/pro/qr'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: normalizedPhone, email: trimmedEmail || undefined }) });
+      const response = await fetch(apiUrl('/api/pro/qr'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: normalizedPhone, email: trimmedEmail || undefined, plan: selectedPlan }) });
       const rawText = await response.text();
       let data: ProQr | { error?: string } | null = null;
 
@@ -1040,7 +1043,7 @@ function ProUpgradeModal({ open, onClose, onUnlocked, globalPhone, setGlobalPhon
         throw new Error('Phản hồi từ máy chủ không hợp lệ.');
       }
       setQr(data);
-      trackEvent('pro_qr_created', { plan: 'monthly_49000', has_email: Boolean(trimmedEmail) });
+      trackEvent('pro_qr_created', { plan: selectedPlan, has_email: Boolean(trimmedEmail) });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Chưa tạo được mã QR. Bạn thử lại nhé.');
     } finally {
@@ -1048,10 +1051,12 @@ function ProUpgradeModal({ open, onClose, onUnlocked, globalPhone, setGlobalPhon
     }
   };
 
-  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/55 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="pro-upgrade-title">
-    <div className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-[28px] bg-card p-5 shadow-2xl sm:rounded-[28px] md:p-7">
-      <div className="flex items-start justify-between gap-4"><div><span className="inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.12em]"><Crown size={13} /> Thành viên Pro</span><h2 id="pro-upgrade-title" className="display-font mt-3 text-3xl font-bold">Nấu đủ cả tuần</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Chuyển khoản VietQR một lần, mở khóa ngay trên thiết bị này.</p></div><button onClick={onClose} className="rounded-full p-2 text-muted-foreground hover:bg-muted" aria-label="Đóng popup nâng cấp" data-testid="button-close-upgrade"><X size={19} /></button></div>
-      <div className="mt-5 rounded-2xl bg-secondary/70 p-4"><div className="flex items-center justify-between gap-3"><span className="text-sm font-bold">Pro hàng tháng</span><span className="display-font text-2xl font-bold text-primary">{PRO_PRICE.toLocaleString('vi-VN')}đ</span></div><div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2"><span>✓ Thực đơn đủ 7 ngày</span><span>✓ Hỏi AI không giới hạn</span><span>✓ Công thức và danh sách đi chợ</span><span>✓ Hỗ trợ gia đình nhiều thành viên</span></div></div>
+  return <div className="pro-sales-backdrop fixed inset-0 z-[2000] flex items-end justify-center bg-foreground/55 p-0 backdrop-blur-sm sm:p-4" role="dialog" aria-modal="true" aria-labelledby="pro-upgrade-title">
+    <div className="pro-sales-sheet max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-[24px] bg-card p-5 shadow-2xl sm:rounded-[24px] md:p-7">
+      <div className="flex items-start justify-between gap-4"><div><h2 id="pro-upgrade-title" className="display-font text-2xl font-bold text-primary">👑 NÂNG CẤP BẾP VIP PRO</h2><p className="mt-2 text-sm italic leading-6 text-muted-foreground">Mỗi ngày 1.600đ — Mua lại 10 giờ tự do & Tiết kiệm hàng triệu tiền chợ!</p></div><button onClick={onClose} className="rounded-full p-2 text-muted-foreground hover:bg-muted" aria-label="Đóng popup nâng cấp" data-testid="button-close-upgrade"><X size={19} /></button></div>
+      <div className="mt-4 grid gap-2 text-sm"><span>✅ Thực đơn đủ 7 ngày, đủ chất</span><span>✅ Hỏi AI không giới hạn</span><span>✅ Công thức và danh sách đi chợ thông minh</span><span>✅ Hỗ trợ gia đình nhiều thành viên</span></div>
+      <div className="mt-5 space-y-2" role="radiogroup" aria-label="Chọn gói Pro"><button type="button" onClick={() => setSelectedPlan('annual')} className={`pro-plan-card ${selectedPlan === 'annual' ? 'pro-plan-selected' : ''}`} role="radio" aria-checked={selectedPlan === 'annual'}><span><strong>🌟 GÓI NĂM</strong><span className="block text-xs">{PRO_ANNUAL_PRICE.toLocaleString('vi-VN')} đ/năm · Tiết kiệm 32%</span></span><span className="pro-plan-badge">Khuyên dùng</span></button><button type="button" onClick={() => setSelectedPlan('monthly')} className={`pro-plan-card ${selectedPlan === 'monthly' ? 'pro-plan-selected' : ''}`} role="radio" aria-checked={selectedPlan === 'monthly'}><span><strong>🌿 GÓI THÁNG</strong><span className="block text-xs">{PRO_PRICE.toLocaleString('vi-VN')} đ/tháng</span></span></button></div>
+      <div className="mt-5 rounded-2xl bg-secondary/70 p-4"><div className="flex items-center justify-between gap-3"><span className="text-sm font-bold">Gói Pro đã chọn</span><span className="display-font text-2xl font-bold text-primary">{selectedPlan === 'annual' ? PRO_ANNUAL_PRICE.toLocaleString('vi-VN') : PRO_PRICE.toLocaleString('vi-VN')}đ</span></div><p className="mt-2 text-xs text-muted-foreground">Thanh toán một lần qua VietQR, mở khóa ngay trên thiết bị này.</p></div>
       {!qr ? <div className="mt-5 space-y-4"><label className="block text-xs font-bold text-muted-foreground"><span className="inline-flex items-center gap-1.5"><Mail size={14} /> Email người dùng</span><input value={email} onChange={(event) => setEmail(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && createQr()} placeholder="email@example.com" type="email" className="mt-1.5 w-full rounded-xl border bg-background px-3 py-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-pro-email" /></label><label className="block text-xs font-bold text-muted-foreground"><span className="inline-flex items-center gap-1.5"><Smartphone size={14} /> Số điện thoại người dùng</span><input value={phone} onChange={(event) => setPhone(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && createQr()} placeholder="Ví dụ: 0912 345 678" inputMode="tel" className="mt-1.5 w-full rounded-xl border bg-background px-3 py-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-pro-phone" /></label><p className="mt-2 text-xs leading-5 text-muted-foreground">Nội dung chuyển khoản sẽ tự điền: <strong>PRO [Số điện thoại]</strong>.</p><button onClick={createQr} disabled={loading} className="tactile mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-[0_4px_0_hsl(13_72%_43%)] disabled:opacity-60" data-testid="button-create-vietqr">{loading ? <><LoaderCircle size={17} className="animate-spin" /> Đang tạo mã QR...</> : <><QrCode size={17} /> Hiện mã QR chuyển khoản</>}</button></div> : <div className="mt-5 text-center"><div className="mx-auto w-fit rounded-2xl border bg-white p-3 shadow-sm"><img src={qr.qrUrl} alt={`Mã VietQR chuyển khoản ${PRO_PRICE.toLocaleString('vi-VN')} đồng`} className="h-64 w-64 object-contain" /></div><p className="mt-3 text-sm font-bold">Quét mã bằng ứng dụng ngân hàng</p><p className="mt-1 text-xs text-muted-foreground">Số tiền: <strong className="text-foreground">{qr.amount.toLocaleString('vi-VN')}đ</strong> · Nội dung: <strong className="text-primary">{qr.transferContent}</strong></p><button onClick={() => { setQr(null); }} className="mt-3 text-xs font-bold text-primary underline" data-testid="button-change-pro-phone">Đổi thông tin</button><button onClick={onUnlocked} className="tactile mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(105_40%_45%)] px-4 py-3 text-sm font-bold text-white shadow-[0_4px_0_hsl(105_40%_35%)]" data-testid="button-confirm-pro"><Check size={17} /> Tôi đã chuyển khoản — mở khóa Pro</button><p className="mt-2 text-[11px] leading-5 text-muted-foreground">Sau khi chuyển khoản thành công, hãy bấm xác nhận để mở khóa trên thiết bị này.</p></div>}
       {error && <p className="mt-3 rounded-xl bg-destructive/10 p-3 text-xs font-bold text-destructive" role="alert">{error}</p>}
     </div>
