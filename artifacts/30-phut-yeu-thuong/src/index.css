@@ -140,18 +140,7 @@
 .settings-switch-on { background: var(--primary-green); }
 .settings-switch-on span { transform: translateX(16px); }
 .settings-modal-panel { border: 1px solid rgba(43, 45, 66, .08); }
-.page-enter > .space-y-5 > section:first-child { display: block; min-height: 60px; margin-bottom: 0; border-radius: 16px; padding: 10px 12px; background: var(--bg-card); border: 1px solid rgba(58, 107, 76, .12); box-shadow: 0 4px 12px rgba(43, 45, 66, .05); }
-.page-enter > .space-y-5 > section:first-child > div { position: relative; inset: auto; width: 100%; max-width: none; }
-.page-enter > .space-y-5 > section:first-child > div > div { position: static; display: none; }
-.page-enter > .space-y-5 > section:first-child p:first-child { display: none; }
-.page-enter > .space-y-5 > section:first-child h1 { display: block; max-width: none; margin: 0; color: var(--primary-green); font-family: var(--app-font-sans); font-size: 14px; font-style: italic; font-weight: 500; line-height: 18px; letter-spacing: 0; white-space: nowrap; }
-.page-enter > .space-y-5 > section:first-child h1::before { content: '🌿 '; font-style: normal; }
-.page-enter > .space-y-5 > section:first-child h1 br { display: none; }
-.page-enter > .space-y-5 > section:first-child h1 span { color: inherit; }
-.page-enter > .space-y-5 > section:first-child h1 + p { display: none; }
-.page-enter > .space-y-5 > section:first-child h1 ~ div { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; margin-top: 4px; overflow: hidden; }
-.page-enter > .space-y-5 > section:first-child h1 ~ div span { flex: 0 0 auto; gap: 4px; padding: 2px 8px; border-radius: 12px; background: #F0F4F1; box-shadow: none; color: var(--text-sub); font-size: 12px; font-weight: 500; line-height: 16px; }
-.page-enter > .space-y-5 > section:first-child h1 ~ div span svg { width: 12px; height: 12px; color: var(--primary-green); }
+.compact-message { padding: 6px 0 8px; color: var(--primary-green); font-size: 13px; font-style: italic; font-weight: 500; line-height: 18px; }
 .tactile { transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease; }
 .tactile:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(110, 84, 58, .11); }
 .tactile:active { transform: translateY(1px); }
