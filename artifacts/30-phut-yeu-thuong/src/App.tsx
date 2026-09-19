@@ -879,7 +879,7 @@ function Shell() {
   }, [plan, units, prefs, bought]);
 
   let page;
-  if (location === '/shopping') page = <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} setQuantityOverrides={setQuantityOverrides} targetBudget={prefs.targetBudget || 1200000} prefs={prefs} />;
+  if (location === '/shopping') page = <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} setQuantityOverrides={setQuantityOverrides} targetBudget={prefs.targetBudget || 1200000} prefs={prefs} plan={accessiblePlan} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} onSwapDish={swapDish} />;
   else if (location === '/costs') page = <div className="space-y-5"><CostsPage shopping={shopping} prefs={prefs} totalCost={totalCost} plan={accessiblePlan} /><KitchenEquityCard weeklySaving={Math.max(0, (prefs.targetBudget || 1200000) - totalCost)} /></div>;
   else if (location === '/ask-ai') page = <AskAiPageV2 prefs={prefs} isPro={isPro} onUpgrade={() => openUpgrade('ai_limit')} />;
   else page = <HomePage plan={plan} isPro={isPro} onUpgrade={() => openUpgrade('locked_week')} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} totalCost={totalCost} forceBudget={forceBudget} budgetNotice={budgetNotice} swapNotice={swapNotice} onSwapDish={swapDish} />;
@@ -1021,7 +1021,6 @@ function ZeroScrollMealPlanner({ plan, prefs, favorites, setFavorites, onSwap }:
         ? [{ dish: day.dinner.dam, slot: 'dinner.dam' as DishSlot }, ...(prefs.dishesPerMainMeal >= 2 ? [{ dish: day.dinner.rau, slot: 'dinner.rau' as DishSlot }] : []), ...(prefs.dishesPerMainMeal >= 3 ? [{ dish: day.dinner.canh, slot: 'dinner.canh' as DishSlot }] : [])]
         : [];
   const mealLabel = mealOptions.find((meal) => meal.key === selectedMeal)?.label || 'Bữa Trưa';
-  const units = unitsOf(prefs);
   return <section className="menu-planner space-y-3" aria-label="Thực đơn theo ngày và bữa">
     <div className="menu-day-selector flex gap-2 overflow-x-auto" role="tablist" aria-label="Chọn ngày">
       {DAY_NAMES.map((name, index) => { const isActive = selectedDay === name; const isToday = name === plan[0]?.day; const isLocked = !plan.some((item) => item.day === name); return <button key={name} onClick={() => setSelectedDay(name)} className={`relative flex min-w-[52px] shrink-0 flex-col items-center justify-center rounded-xl px-3 py-2 text-xs font-bold transition-colors ${isActive ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-card text-muted-foreground'} ${isLocked ? 'opacity-60' : ''}`} role="tab" aria-selected={isActive} data-testid={`button-day-selector-${index + 1}`}><span>{['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'][index]}</span>{isToday && <span className={`mt-1 h-1.5 w-1.5 rounded-full ${isActive ? 'bg-white' : 'bg-accent'}`} aria-label="Hôm nay" />}</button>; })}
@@ -1034,7 +1033,6 @@ function ZeroScrollMealPlanner({ plan, prefs, favorites, setFavorites, onSwap }:
       {day ? <MealGrid dishes={dishes} favorites={favorites} setFavorites={setFavorites} onSwap={(slot) => onSwap(planIndex, slot)} /> : <div className="rounded-xl bg-secondary/60 p-5 text-center"><p className="text-sm font-bold">Ngày này đang được khóa</p><p className="mt-1 text-xs text-muted-foreground">Mở khóa Pro để xem trọn thực đơn 7 ngày.</p></div>}
       <Link href="/shopping" className="warm-cta mt-3 flex w-full items-center justify-center gap-2 text-center no-underline" data-testid="button-meal-shopping"><ShoppingBasket size={17} /> Xem Danh Sách Đi Chợ Cho {selectedMeal === 'dinner' ? 'Bữa Tối' : mealLabel}</Link>
     </div>
-    {day && <BhxDailyCartCard key={`${selectedDay}-${selectedMeal}`} dishes={dishes} units={units} mealLabel={mealLabel} selectedDay={selectedDay} />}
   </section>;
 }
 
@@ -1302,7 +1300,8 @@ function ShoppingPage({ shopping, bought, setBought, customItems, setCustomItems
 }
 function ShoppingGroup({ category, items, bought, toggle }: { category: string; items: [string, { qty: number; unit?: string }][]; bought: Set<string>; toggle: (name: string) => void }) { return <section className="paper-card overflow-hidden"><div className="flex items-center justify-between border-b bg-muted/45 px-4 py-3"><h2 className="text-sm font-bold">{category}</h2><span className="rounded-full bg-card px-2.5 py-1 text-[10px] font-bold text-muted-foreground">{items.length} món</span></div><div className="divide-y">{items.map(([name, value]) => { const done = bought.has(name); return <div key={name} className={`flex items-center justify-between gap-3 px-4 py-3.5 transition-opacity ${done ? 'opacity-45' : ''}`}><button onClick={() => toggle(name)} className="flex min-w-0 items-center gap-3 text-left" data-testid={`button-bought-${name}`}><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${done ? 'border-[hsl(113_40%_45%)] bg-[hsl(113_40%_45%)] text-white' : 'border-[hsl(37_43%_74%)] bg-card'}`}>{done && <Check size={14} strokeWidth={3} />}</span><span className={`text-sm font-semibold ${done ? 'line-through' : ''}`}>{name}</span></button><span className="shrink-0 text-xs font-bold text-muted-foreground">{displayQuantity(value)}</span></div>; })}</div></section>; }
 
-function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomItems, totalCost, setQuantityOverrides, targetBudget, prefs }: { shopping: Aggregate; bought: Set<string>; setBought: (value: Set<string>) => void; customItems: { name: string; bought: boolean }[]; setCustomItems: (value: { name: string; bought: boolean }[]) => void; totalCost: number; setQuantityOverrides: (value: Record<string, number> | ((current: Record<string, number>) => Record<string, number>)) => void; targetBudget: number; prefs: Preferences }) {
+function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomItems, totalCost, setQuantityOverrides, targetBudget, prefs, plan, favoriteDishes, setFavoriteDishes, onSwapDish }: { shopping: Aggregate; bought: Set<string>; setBought: (value: Set<string>) => void; customItems: { name: string; bought: boolean }[]; setCustomItems: (value: { name: string; bought: boolean }[]) => void; totalCost: number; setQuantityOverrides: (value: Record<string, number> | ((current: Record<string, number>) => Record<string, number>)) => void; targetBudget: number; prefs: Preferences; plan: DayPlan[]; favoriteDishes: Set<string>; setFavoriteDishes: (value: Set<string>) => void; onSwapDish: (dayIndex: number, slot: DishSlot) => void }) {
+  const [tab, setTab] = useState<'week' | 'day'>('week');
   const [newItem, setNewItem] = useState('');
   const [copied, setCopied] = useState(false);
   const entries = Object.entries(shopping) as [string, { qty: number; unit?: string }][];
@@ -1362,21 +1361,64 @@ function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomIte
   const remainingBudget = Math.max(0, targetBudget - totalCost);
   return <div className="space-y-5 pb-5">
     <section className="shopping-page-header">
-      <div className="shopping-title-row"><div><p className="text-[10px] font-bold uppercase tracking-[.15em] text-primary">Đi chợ</p><h1 className="shopping-page-title">Túi đi chợ tuần này</h1></div>
+      <div className="shopping-title-row"><div><p className="text-[10px] font-bold uppercase tracking-[.15em] text-primary">Đi chợ</p><h1 className="shopping-page-title">{tab === 'week' ? 'Túi đi chợ tuần này' : 'Đi chợ theo ngày'}</h1></div>
       <div className="flex flex-wrap gap-2">
         <button onClick={copyShoppingList} className="shopping-action warm-cta tactile inline-flex items-center justify-center gap-1.5" data-testid="button-share-zalo">{copied ? <Check size={14} /> : <Share2 size={14} />}{copied ? 'Đã copy' : '📱 Gửi Zalo'}</button>
         <button onClick={() => window.print()} className="shopping-action tactile inline-flex items-center gap-1.5 rounded-full border border-[hsl(34_31%_90%)] bg-white font-bold shadow-sm" data-testid="button-print-shopping"><Printer size={14} /> In</button>
       </div></div>
-      <div className="shopping-budget-strip" aria-label="Tiến độ ngân sách tuần"><span className="shrink-0">💰 Đã chi: {money(totalCost)} / {money(targetBudget)}</span><span className="shopping-budget-track" aria-hidden="true"><span style={{ width: `${budgetPercent}%` }} /></span><span className="shrink-0">Còn lại: {money(remainingBudget)} ({boughtCount}/{totalCount} món)</span>
+      <div className="mt-3 flex rounded-xl bg-muted p-1" role="tablist" aria-label="Chọn kiểu đi chợ">
+        <button onClick={() => setTab('week')} className={`flex min-h-11 flex-1 items-center justify-center gap-1 rounded-lg px-2 py-2 text-xs font-bold transition-colors ${tab === 'week' ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`} role="tab" aria-selected={tab === 'week'} data-testid="button-shopping-tab-week">📅 Theo Tuần</button>
+        <button onClick={() => setTab('day')} className={`flex min-h-11 flex-1 items-center justify-center gap-1 rounded-lg px-2 py-2 text-xs font-bold transition-colors ${tab === 'day' ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`} role="tab" aria-selected={tab === 'day'} data-testid="button-shopping-tab-day">🗓️ Theo Ngày</button>
       </div>
+      {tab === 'week' && <div className="shopping-budget-strip" aria-label="Tiến độ ngân sách tuần"><span className="shrink-0">💰 Đã chi: {money(totalCost)} / {money(targetBudget)}</span><span className="shopping-budget-track" aria-hidden="true"><span style={{ width: `${budgetPercent}%` }} /></span><span className="shrink-0">Còn lại: {money(remainingBudget)} ({boughtCount}/{totalCount} món)</span>
+      </div>}
     </section>
-    <ShoppingGroupV2 title="Thực phẩm tươi sống" subtitle="Thịt, cá, tôm, rau và củ" items={freshItems} bought={bought} toggle={toggle} updateQuantity={updateQuantity} kind="fresh" />
-    <ShoppingGroupV2 title="Đồ khô & gia vị" subtitle="Gạo, bún, tôm khô và các món để dành" items={dryItems} bought={bought} toggle={toggle} updateQuantity={updateQuantity} kind="dry" />
-    <section className="paper-card border-[hsl(113_40%_45%/.3)] bg-secondary/45 p-4 md:p-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-[hsl(113_33%_30%)]">Mua tươi sống tiện hơn</p><p className="mt-1 text-sm font-semibold">Đặt một lần, giao đủ rau củ và thịt cá cho cả tuần.</p></div><a href={BACH_HOA_XANH_AFFILIATE_URL} target="_blank" rel="nofollow sponsored noopener" className="tactile inline-flex items-center justify-center gap-2 rounded-xl bg-[hsl(113_40%_45%)] px-4 py-3 text-xs font-bold text-white shadow-[0_4px_0_hsl(113_40%_35%)]" data-testid="link-bach-hoa-xanh"><ShoppingBasket size={16} /> 🛒 Đặt giao tận nhà qua Bách Hóa Xanh <ExternalLink size={13} /></a></div>
-    </section>
-    <CustomBagAiCard prefs={prefs} />
-    <section className="paper-card p-5"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-muted-foreground">Tự thêm</p><h2 className="display-font mt-1 text-2xl font-bold">Món cần nhớ</h2></div><Plus size={20} className="text-primary" /></div><div className="mt-4 flex gap-2"><input value={newItem} onChange={(event) => setNewItem(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && add()} placeholder="Ví dụ: khăn giấy, nước rửa rau" className="min-w-0 flex-1 rounded-xl border bg-background px-3 py-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-custom-shopping" /><button onClick={add} className="tactile rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground" data-testid="button-add-shopping"><Plus size={16} /></button></div><div className="mt-3 space-y-2">{customItems.length === 0 ? <p className="rounded-xl border border-dashed p-4 text-center text-xs text-muted-foreground">Chưa có món tự thêm. Danh sách này chỉ của riêng nhà mình.</p> : customItems.map((item, index) => <div key={`${item.name}-${index}`} className={`flex items-center justify-between rounded-xl border bg-background px-3 py-3 ${item.bought ? 'opacity-50' : ''}`}><button onClick={() => setCustomItems(customItems.map((entry, i) => i === index ? { ...entry, bought: !entry.bought } : entry))} className="flex min-w-0 items-center gap-3 text-left text-sm font-bold" data-testid={`button-toggle-custom-${index}`}><span className={`flex h-5 w-5 items-center justify-center rounded-full border ${item.bought ? 'border-[hsl(113_40%_45%)] bg-[hsl(113_40%_45%)] text-white' : ''}`}>{item.bought && <Check size={12} />}</span><span className={item.bought ? 'line-through' : ''}>{item.name}</span></button><button onClick={() => setCustomItems(customItems.filter((_, i) => i !== index))} className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-destructive" aria-label="Xóa món tự thêm" data-testid={`button-remove-custom-${index}`}><Trash2 size={15} /></button></div>)}</div></section>
+    {tab === 'week' ? <>
+      <ShoppingGroupV2 title="Thực phẩm tươi sống" subtitle="Thịt, cá, tôm, rau và củ" items={freshItems} bought={bought} toggle={toggle} updateQuantity={updateQuantity} kind="fresh" />
+      <ShoppingGroupV2 title="Đồ khô & gia vị" subtitle="Gạo, bún, tôm khô và các món để dành" items={dryItems} bought={bought} toggle={toggle} updateQuantity={updateQuantity} kind="dry" />
+      <section className="paper-card border-[hsl(113_40%_45%/.3)] bg-secondary/45 p-4 md:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-[hsl(113_33%_30%)]">Mua tươi sống tiện hơn</p><p className="mt-1 text-sm font-semibold">Đặt một lần, giao đủ rau củ và thịt cá cho cả tuần.</p></div><a href={BACH_HOA_XANH_AFFILIATE_URL} target="_blank" rel="nofollow sponsored noopener" className="tactile inline-flex items-center justify-center gap-2 rounded-xl bg-[hsl(113_40%_45%)] px-4 py-3 text-xs font-bold text-white shadow-[0_4px_0_hsl(113_40%_35%)]" data-testid="link-bach-hoa-xanh"><ShoppingBasket size={16} /> 🛒 Đặt giao tận nhà qua Bách Hóa Xanh <ExternalLink size={13} /></a></div>
+      </section>
+      <CustomBagAiCard prefs={prefs} />
+      <section className="paper-card p-5"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-muted-foreground">Tự thêm</p><h2 className="display-font mt-1 text-2xl font-bold">Món cần nhớ</h2></div><Plus size={20} className="text-primary" /></div><div className="mt-4 flex gap-2"><input value={newItem} onChange={(event) => setNewItem(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && add()} placeholder="Ví dụ: khăn giấy, nước rửa rau" className="min-w-0 flex-1 rounded-xl border bg-background px-3 py-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-custom-shopping" /><button onClick={add} className="tactile rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground" data-testid="button-add-shopping"><Plus size={16} /></button></div><div className="mt-3 space-y-2">{customItems.length === 0 ? <p className="rounded-xl border border-dashed p-4 text-center text-xs text-muted-foreground">Chưa có món tự thêm. Danh sách này chỉ của riêng nhà mình.</p> : customItems.map((item, index) => <div key={`${item.name}-${index}`} className={`flex items-center justify-between rounded-xl border bg-background px-3 py-3 ${item.bought ? 'opacity-50' : ''}`}><button onClick={() => setCustomItems(customItems.map((entry, i) => i === index ? { ...entry, bought: !entry.bought } : entry))} className="flex min-w-0 items-center gap-3 text-left text-sm font-bold" data-testid={`button-toggle-custom-${index}`}><span className={`flex h-5 w-5 items-center justify-center rounded-full border ${item.bought ? 'border-[hsl(113_40%_45%)] bg-[hsl(113_40%_45%)] text-white' : ''}`}>{item.bought && <Check size={12} />}</span><span className={item.bought ? 'line-through' : ''}>{item.name}</span></button><button onClick={() => setCustomItems(customItems.filter((_, i) => i !== index))} className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-destructive" aria-label="Xóa món tự thêm" data-testid={`button-remove-custom-${index}`}><Trash2 size={15} /></button></div>)}</div></section>
+    </> : <ShoppingDayView plan={plan} prefs={prefs} favorites={favoriteDishes} setFavorites={setFavoriteDishes} onSwap={onSwapDish} />}
+  </div>;
+}
+
+function ShoppingDayView({ plan, prefs, favorites, setFavorites, onSwap }: { plan: DayPlan[]; prefs: Preferences; favorites: Set<string>; setFavorites: (value: Set<string>) => void; onSwap: (dayIndex: number, slot: DishSlot) => void }) {
+  const [selectedDay, setSelectedDay] = useState(plan[0]?.day || DAY_NAMES[0]);
+  const [selectedMeal, setSelectedMeal] = useState<'lunch' | 'dinner' | 'breakfast'>('lunch');
+  useEffect(() => {
+    setSelectedDay(plan[0]?.day || DAY_NAMES[0]);
+  }, [plan]);
+  const planIndex = plan.findIndex((item) => item.day === selectedDay);
+  const day = planIndex >= 0 ? plan[planIndex] : null;
+  const mealOptions = [
+    { key: 'lunch' as const, label: 'Bữa Trưa', icon: '☀️' },
+    { key: 'dinner' as const, label: 'Bữa Tối', icon: '🌙' },
+    { key: 'breakfast' as const, label: 'Bữa Sáng', icon: '🌅' },
+  ];
+  const dishes = day && selectedMeal === 'breakfast'
+    ? [{ dish: day.breakfast, slot: 'breakfast' as DishSlot }]
+    : day && selectedMeal === 'lunch'
+      ? [{ dish: day.lunch.dam, slot: 'lunch.dam' as DishSlot }, ...(prefs.dishesPerMainMeal >= 2 ? [{ dish: day.lunch.rau, slot: 'lunch.rau' as DishSlot }] : []), ...(prefs.dishesPerMainMeal >= 3 ? [{ dish: day.lunch.canh, slot: 'lunch.canh' as DishSlot }] : [])]
+      : day
+        ? [{ dish: day.dinner.dam, slot: 'dinner.dam' as DishSlot }, ...(prefs.dishesPerMainMeal >= 2 ? [{ dish: day.dinner.rau, slot: 'dinner.rau' as DishSlot }] : []), ...(prefs.dishesPerMainMeal >= 3 ? [{ dish: day.dinner.canh, slot: 'dinner.canh' as DishSlot }] : [])]
+        : [];
+  const mealLabel = mealOptions.find((meal) => meal.key === selectedMeal)?.label || 'Bữa Trưa';
+  const units = unitsOf(prefs);
+  return <div className="space-y-3">
+    <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Chọn ngày">
+      {DAY_NAMES.map((name, index) => { const isActive = selectedDay === name; const isToday = name === plan[0]?.day; const isLocked = !plan.some((item) => item.day === name); return <button key={name} onClick={() => setSelectedDay(name)} className={`relative flex min-w-[52px] shrink-0 flex-col items-center justify-center rounded-xl px-3 py-2 text-xs font-bold transition-colors ${isActive ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-card text-muted-foreground'} ${isLocked ? 'opacity-60' : ''}`} role="tab" aria-selected={isActive} data-testid={`button-shopping-day-selector-${index + 1}`}><span>{['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'][index]}</span>{isToday && <span className={`mt-1 h-1.5 w-1.5 rounded-full ${isActive ? 'bg-white' : 'bg-accent'}`} aria-label="Hôm nay" />}</button>; })}
+    </div>
+    <div className="flex rounded-xl bg-muted p-1" role="tablist" aria-label="Chọn bữa">
+      {mealOptions.map((meal) => <button key={meal.key} onClick={() => setSelectedMeal(meal.key)} className={`flex min-h-11 flex-1 items-center justify-center gap-1 rounded-lg px-2 py-2 text-xs font-bold transition-colors ${selectedMeal === meal.key ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`} role="tab" aria-selected={selectedMeal === meal.key} data-testid={`button-shopping-meal-tab-${meal.key}`}>{meal.icon} {meal.label}</button>)}
+    </div>
+    <div className="paper-card !mb-0 p-3" data-testid="shopping-day-meal-panel">
+      <div className="mb-3 flex items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.14em] text-primary">{selectedDay}</p><h2 className="display-font text-xl font-bold">{mealLabel}</h2></div><span className="rounded-full bg-secondary px-3 py-1.5 text-[11px] font-bold text-secondary-foreground">{day ? `${dishes.length} món` : 'Đang khóa'}</span></div>
+      {day ? <MealGrid dishes={dishes} favorites={favorites} setFavorites={setFavorites} onSwap={(slot) => onSwap(planIndex, slot)} /> : <div className="rounded-xl bg-secondary/60 p-5 text-center"><p className="text-sm font-bold">Ngày này đang được khóa</p><p className="mt-1 text-xs text-muted-foreground">Mở khóa Pro để xem trọn thực đơn 7 ngày.</p></div>}
+    </div>
+    {day && <BhxDailyCartCard key={`${selectedDay}-${selectedMeal}`} dishes={dishes} units={units} mealLabel={mealLabel} selectedDay={selectedDay} />}
   </div>;
 }
 
