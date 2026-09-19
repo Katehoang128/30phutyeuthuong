@@ -487,7 +487,7 @@ function quantityEditorValue(value: { qty: number; unit?: string }) {
 function BudgetProgress({ totalCost, targetBudget, className = "" }: { totalCost: number, targetBudget: number, className?: string }) {
   const percent = targetBudget > 0 ? (totalCost / targetBudget) * 100 : 0;
   const isOver = totalCost > targetBudget;
-  const colorClass = isOver ? 'bg-destructive' : percent >= 90 ? 'bg-amber-400' : 'bg-[hsl(105_40%_45%)]';
+  const colorClass = isOver ? 'bg-destructive' : percent >= 90 ? 'bg-amber-400' : 'bg-primary';
   
   return (
     <div className={`space-y-3 ${className}`} data-testid="budget-progress">
@@ -502,7 +502,7 @@ function BudgetProgress({ totalCost, targetBudget, className = "" }: { totalCost
         {isOver ? (
           <span className="text-destructive flex items-center gap-1"><AlertCircle size={13} /> Vượt ngân sách: {money(totalCost - targetBudget)}</span>
         ) : (
-          <span className="text-[hsl(105_40%_45%)] flex items-center gap-1"><Check size={13} /> Còn trống: {money(targetBudget - totalCost)}</span>
+          <span className="text-primary flex items-center gap-1"><Check size={13} /> Còn trống: {money(targetBudget - totalCost)}</span>
         )}
       </div>
     </div>
@@ -565,7 +565,7 @@ function BudgetWarning({ plan, units, p, totalCost, forceBudget }: { plan: DayPl
                   <span className="text-muted-foreground">→</span>
                   <span className="font-bold text-foreground">{s.newDish.name}</span>
                 </div>
-                <span className="text-[hsl(105_40%_45%)] font-bold whitespace-nowrap">- {money(s.saving)}</span>
+                <span className="text-primary font-bold whitespace-nowrap">- {money(s.saving)}</span>
               </li>
             ))}
           </ul>
@@ -819,10 +819,10 @@ function HealingModeSettings({ prefs, updatePrefs, saveSettings }: { prefs: Pref
   const toggle = (mode: HealingMode) => updatePrefs({
     healingModes: prefs.healingModes.includes(mode) ? prefs.healingModes.filter((item) => item !== mode) : [...prefs.healingModes, mode],
   });
-  return <section className="paper-card border-[hsl(105_40%_75%)] bg-[linear-gradient(145deg,hsl(103_40%_97%),hsl(39_67%_98%))] p-4 md:p-5" data-testid="healing-mode-settings">
-    <div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[hsl(103_40%_90%)] text-xl">🌿</span><div><p className="text-[10px] font-bold uppercase tracking-[.15em] text-[hsl(105_33%_30%)]">Chế độ ăn chuyên sâu</p><h2 className="display-font mt-1 text-2xl font-bold">Bếp Chữa Lành & Năng Lượng</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Có thể chọn nhiều chế độ. Bếp sẽ kết hợp các ưu tiên khi tạo thực đơn mới.</p></div></div>
+  return <section className="paper-card border-[hsl(38_55%_72%)] bg-[linear-gradient(145deg,hsl(38_100%_96%),hsl(18_72%_97%))] p-4 md:p-5" data-testid="healing-mode-settings">
+    <div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[hsl(38_70%_86%)] text-xl">🌿</span><div><p className="text-[10px] font-bold uppercase tracking-[.15em] text-[hsl(24_42%_35%)]">Chế độ ăn chuyên sâu</p><h2 className="display-font mt-1 text-2xl font-bold">Bếp Chữa Lành & Năng Lượng</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Có thể chọn nhiều chế độ. Bếp sẽ kết hợp các ưu tiên khi tạo thực đơn mới.</p></div></div>
     <div className="mt-4 grid gap-3">{healingModeOptions.map((option) => { const active = prefs.healingModes.includes(option.value); return <label key={option.value} className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-3.5 transition-colors ${active ? 'border-[hsl(105_40%_45%)] bg-white shadow-sm' : 'bg-white/55 hover:bg-white'}`} data-testid={`label-healing-${option.value}`}><input type="checkbox" checked={active} onChange={() => toggle(option.value)} className="mt-1 h-4 w-4 accent-[hsl(105_40%_40%)]" data-testid={`checkbox-healing-${option.value}`} /><span className="text-lg" aria-hidden="true">{option.icon}</span><span><span className="block text-sm font-bold leading-5">{option.title}</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">{option.description}</span></span></label>; })}</div>
-    <button onClick={saveSettings} className="tactile mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[hsl(105_40%_40%)] px-4 py-3 text-sm font-bold text-white shadow-[0_4px_0_hsl(105_40%_30%)]" data-testid="button-save-healing-modes"><Sparkles size={16} /> Áp dụng và tạo thực đơn chữa lành</button>
+    <button onClick={saveSettings} className="tactile mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-[0_4px_0_hsl(18_58%_36%)]" data-testid="button-save-healing-modes"><Sparkles size={16} /> Áp dụng và tạo thực đơn chữa lành</button>
   </section>;
 }
 
