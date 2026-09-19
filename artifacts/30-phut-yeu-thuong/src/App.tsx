@@ -526,25 +526,65 @@ function parseBagText(text: string): { name: string; qty: number; unit: 'g' | 'k
   });
 }
 function bagItemCost(item: BagItem) { return item.pricePerKg * (item.unit === 'kg' ? item.qty : item.qty / 1000); }
-type BagMeal = { label: string; dam: BagItem[]; rau: BagItem[]; canh: BagItem[]; cost: number };
-// AI Meal Pairing Engine: splits a free-form bag of groceries into balanced Bữa Trưa / Bữa Tối trays
-// (Đạm - Rau - Canh), flags any missing food group, and estimates cost per meal.
-function pairBagIntoMeals(items: BagItem[]) {
-  const meals: BagMeal[] = [{ label: 'Bữa Trưa', dam: [], rau: [], canh: [], cost: 0 }, { label: 'Bữa Tối', dam: [], rau: [], canh: [], cost: 0 }];
-  items.filter((item) => item.group === 'dam').forEach((item, index) => meals[index % 2].dam.push(item));
-  items.filter((item) => item.group === 'rau').forEach((item, index) => {
-    const meal = meals[index % 2];
-    (meal.rau.length === 0 ? meal.rau : meal.canh).push(item);
+function bagItemGrams(item: BagItem) { return item.unit === 'kg' ? item.qty * 1000 : item.qty; }
+
+// Weekly Cost & Portion Estimator: a full week is 7 ngày x 2 bữa (trưa + tối) = 14 bữa mâm cơm 3 món.
+// Baseline raw-weight guides per person per meal, consistent with the recipe portions in data.ts.
+const BAG_MEALS_PER_WEEK = 14;
+const BAG_DAM_G_PER_PERSON_MEAL = 100;
+const BAG_RAU_G_PER_PERSON_MEAL = 150;
+const BAG_GROUP_LABELS: Record<'dam' | 'rau', string> = { dam: 'đạm (thịt/cá)', rau: 'rau củ' };
+// Cheap staple used to price a top-up suggestion when a food group falls short for the week.
+const BAG_TOPUP_SUGGESTION: Record<'dam' | 'rau', { name: string; pricePerKg: number }> = {
+  dam: { name: 'Đậu hũ', pricePerKg: 16000 },
+  rau: { name: 'Rau muống', pricePerKg: 12000 },
+};
+
+function estimateBagWeek(items: BagItem[], prefs: Preferences) {
+  const familyUnits = Math.max(unitsOf(prefs), 0.01);
+  const perDayNeed: Record<'dam' | 'rau', number> = {
+    dam: BAG_DAM_G_PER_PERSON_MEAL * 2 * familyUnits,
+    rau: BAG_RAU_G_PER_PERSON_MEAL * 2 * familyUnits,
+  };
+  const groups: Record<'dam' | 'rau', { items: BagItem[]; grams: number; cost: number; days: number }> = {
+    dam: { items: [], grams: 0, cost: 0, days: 0 },
+    rau: { items: [], grams: 0, cost: 0, days: 0 },
+  };
+  items.forEach((item) => {
+    const bucket = groups[item.group];
+    bucket.items.push(item);
+    bucket.grams += bagItemGrams(item);
+    bucket.cost += bagItemCost(item);
   });
-  const suggestions: string[] = [];
-  meals.forEach((meal) => {
-    meal.cost = [...meal.dam, ...meal.rau, ...meal.canh].reduce((sum, item) => sum + bagItemCost(item), 0);
-    if (meal.dam.length === 0) suggestions.push(`${meal.label}: thiếu đạm — gợi ý mua thêm Đậu hũ (~8.000 đ) để đủ chất hơn`);
-    if (meal.rau.length === 0) suggestions.push(`${meal.label}: thiếu rau — gợi ý mua thêm Rau muống (~10.000 đ) để đủ chất xơ`);
-    if (meal.canh.length === 0) suggestions.push(`${meal.label}: thiếu món canh — gợi ý mua thêm Bí đỏ (~12.000 đ) để nấu canh`);
-  });
-  const totalCost = items.reduce((sum, item) => sum + bagItemCost(item), 0);
-  return { meals, suggestions, totalCost, avgPerMeal: totalCost / meals.length };
+  (['dam', 'rau'] as const).forEach((group) => { groups[group].days = groups[group].grams / perDayNeed[group]; });
+  const totalCost = groups.dam.cost + groups.rau.cost;
+  const overallDays = Math.min(groups.dam.days, groups.rau.days);
+  const shortages = (['dam', 'rau'] as const)
+    .filter((group) => groups[group].days < 6.95)
+    .map((group) => {
+      const missingDays = 7 - groups[group].days;
+      const missingGrams = perDayNeed[group] * missingDays;
+      const missingCost = (missingGrams / 1000) * BAG_TOPUP_SUGGESTION[group].pricePerKg;
+      return { group, missingDays, missingCost, topup: BAG_TOPUP_SUGGESTION[group].name };
+    });
+  const surplusDays = Math.max(0, overallDays - 7);
+  const surplusCost = overallDays > 0 ? (totalCost / overallDays) * surplusDays : 0;
+  return { groups, perDayNeed, totalCost, overallDays, shortages, surplusDays, surplusCost };
+}
+
+type BagDaySpread = { day: string; dam?: BagItem; damMethod: string; rau?: BagItem };
+const BAG_COOK_STYLES = ['Hấp/Luộc', 'Kho/Rim', 'Xào/Áp chảo'];
+// Auto-Spread Meals: rolls the entered bag across Thứ 2 -> Chủ nhật. Cycling items with `index % length`
+// guarantees no two consecutive days land on the same đạm item (or cách chế biến) whenever ≥2 are entered.
+function spreadBagAcrossWeek(items: BagItem[]): BagDaySpread[] {
+  const damItems = items.filter((item) => item.group === 'dam');
+  const rauItems = items.filter((item) => item.group === 'rau');
+  return DAY_NAMES.map((day, index) => ({
+    day,
+    dam: damItems.length ? damItems[index % damItems.length] : undefined,
+    damMethod: BAG_COOK_STYLES[index % BAG_COOK_STYLES.length],
+    rau: rauItems.length ? rauItems[index % rauItems.length] : undefined,
+  }));
 }
 
 function BudgetProgress({ totalCost, targetBudget, className = "" }: { totalCost: number, targetBudget: number, className?: string }) {
@@ -821,7 +861,7 @@ function Shell() {
   }, [plan, units, prefs, bought]);
 
   let page;
-  if (location === '/shopping') page = <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} setQuantityOverrides={setQuantityOverrides} targetBudget={prefs.targetBudget || 1200000} />;
+  if (location === '/shopping') page = <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} setQuantityOverrides={setQuantityOverrides} targetBudget={prefs.targetBudget || 1200000} prefs={prefs} />;
   else if (location === '/costs') page = <div className="space-y-5"><CostsPage shopping={shopping} prefs={prefs} totalCost={totalCost} plan={accessiblePlan} /><KitchenEquityCard weeklySaving={Math.max(0, (prefs.targetBudget || 1200000) - totalCost)} /></div>;
   else if (location === '/ask-ai') page = <AskAiPageV2 prefs={prefs} isPro={isPro} onUpgrade={() => openUpgrade('ai_limit')} />;
   else page = <HomePage plan={plan} isPro={isPro} onUpgrade={() => openUpgrade('locked_week')} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} totalCost={totalCost} forceBudget={forceBudget} budgetNotice={budgetNotice} swapNotice={swapNotice} onSwapDish={swapDish} />;
@@ -1202,7 +1242,7 @@ function ShoppingPage({ shopping, bought, setBought, customItems, setCustomItems
 }
 function ShoppingGroup({ category, items, bought, toggle }: { category: string; items: [string, { qty: number; unit?: string }][]; bought: Set<string>; toggle: (name: string) => void }) { return <section className="paper-card overflow-hidden"><div className="flex items-center justify-between border-b bg-muted/45 px-4 py-3"><h2 className="text-sm font-bold">{category}</h2><span className="rounded-full bg-card px-2.5 py-1 text-[10px] font-bold text-muted-foreground">{items.length} món</span></div><div className="divide-y">{items.map(([name, value]) => { const done = bought.has(name); return <div key={name} className={`flex items-center justify-between gap-3 px-4 py-3.5 transition-opacity ${done ? 'opacity-45' : ''}`}><button onClick={() => toggle(name)} className="flex min-w-0 items-center gap-3 text-left" data-testid={`button-bought-${name}`}><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${done ? 'border-[hsl(105_40%_45%)] bg-[hsl(105_40%_45%)] text-white' : 'border-[hsl(37_43%_74%)] bg-card'}`}>{done && <Check size={14} strokeWidth={3} />}</span><span className={`text-sm font-semibold ${done ? 'line-through' : ''}`}>{name}</span></button><span className="shrink-0 text-xs font-bold text-muted-foreground">{displayQuantity(value)}</span></div>; })}</div></section>; }
 
-function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomItems, totalCost, setQuantityOverrides, targetBudget }: { shopping: Aggregate; bought: Set<string>; setBought: (value: Set<string>) => void; customItems: { name: string; bought: boolean }[]; setCustomItems: (value: { name: string; bought: boolean }[]) => void; totalCost: number; setQuantityOverrides: (value: Record<string, number> | ((current: Record<string, number>) => Record<string, number>)) => void; targetBudget: number }) {
+function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomItems, totalCost, setQuantityOverrides, targetBudget, prefs }: { shopping: Aggregate; bought: Set<string>; setBought: (value: Set<string>) => void; customItems: { name: string; bought: boolean }[]; setCustomItems: (value: { name: string; bought: boolean }[]) => void; totalCost: number; setQuantityOverrides: (value: Record<string, number> | ((current: Record<string, number>) => Record<string, number>)) => void; targetBudget: number; prefs: Preferences }) {
   const [newItem, setNewItem] = useState('');
   const [copied, setCopied] = useState(false);
   const entries = Object.entries(shopping) as [string, { qty: number; unit?: string }][];
@@ -1275,7 +1315,7 @@ function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomIte
     <section className="paper-card border-[hsl(105_40%_45%/.3)] bg-secondary/45 p-4 md:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-[hsl(105_33%_30%)]">Mua tươi sống tiện hơn</p><p className="mt-1 text-sm font-semibold">Đặt một lần, giao đủ rau củ và thịt cá cho cả tuần.</p></div><a href={BACH_HOA_XANH_AFFILIATE_URL} target="_blank" rel="nofollow sponsored noopener" className="tactile inline-flex items-center justify-center gap-2 rounded-xl bg-[hsl(105_40%_45%)] px-4 py-3 text-xs font-bold text-white shadow-[0_4px_0_hsl(105_40%_35%)]" data-testid="link-bach-hoa-xanh"><ShoppingBasket size={16} /> 🛒 Đặt giao tận nhà qua Bách Hóa Xanh <ExternalLink size={13} /></a></div>
     </section>
-    <CustomBagAiCard />
+    <CustomBagAiCard prefs={prefs} />
     <section className="paper-card p-5"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-muted-foreground">Tự thêm</p><h2 className="display-font mt-1 text-2xl font-bold">Món cần nhớ</h2></div><Plus size={20} className="text-primary" /></div><div className="mt-4 flex gap-2"><input value={newItem} onChange={(event) => setNewItem(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && add()} placeholder="Ví dụ: khăn giấy, nước rửa rau" className="min-w-0 flex-1 rounded-xl border bg-background px-3 py-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-custom-shopping" /><button onClick={add} className="tactile rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground" data-testid="button-add-shopping"><Plus size={16} /></button></div><div className="mt-3 space-y-2">{customItems.length === 0 ? <p className="rounded-xl border border-dashed p-4 text-center text-xs text-muted-foreground">Chưa có món tự thêm. Danh sách này chỉ của riêng nhà mình.</p> : customItems.map((item, index) => <div key={`${item.name}-${index}`} className={`flex items-center justify-between rounded-xl border bg-background px-3 py-3 ${item.bought ? 'opacity-50' : ''}`}><button onClick={() => setCustomItems(customItems.map((entry, i) => i === index ? { ...entry, bought: !entry.bought } : entry))} className="flex min-w-0 items-center gap-3 text-left text-sm font-bold" data-testid={`button-toggle-custom-${index}`}><span className={`flex h-5 w-5 items-center justify-center rounded-full border ${item.bought ? 'border-[hsl(105_40%_45%)] bg-[hsl(105_40%_45%)] text-white' : ''}`}>{item.bought && <Check size={12} />}</span><span className={item.bought ? 'line-through' : ''}>{item.name}</span></button><button onClick={() => setCustomItems(customItems.filter((_, i) => i !== index))} className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-destructive" aria-label="Xóa món tự thêm" data-testid={`button-remove-custom-${index}`}><Trash2 size={15} /></button></div>)}</div></section>
   </div>;
 }
@@ -1289,16 +1329,17 @@ function ShoppingGroupV2({ title, subtitle, items, bought, toggle, updateQuantit
   </section>;
 }
 
-function CustomBagAiCard() {
+function CustomBagAiCard({ prefs }: { prefs: Preferences }) {
   const [open, setOpen] = useState(true);
   const [bagItems, setBagItems] = useState<BagItem[]>([]);
   const [bagText, setBagText] = useState('');
-  const [result, setResult] = useState<ReturnType<typeof pairBagIntoMeals> | null>(null);
+  const [weekSpread, setWeekSpread] = useState<BagDaySpread[] | null>(null);
+  const headcount = prefs.adults + prefs.elderly + prefs.kids;
 
   const addItem = (name: string, qty = 300, unit: 'g' | 'kg' = 'g') => {
     const { group, pricePerKg } = classifyBagIngredient(name);
     setBagItems((current) => [...current, { id: `bag-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name, qty, unit, pricePerKg, group }]);
-    setResult(null);
+    setWeekSpread(null);
   };
   const addFromText = () => {
     const parsed = parseBagText(bagText);
@@ -1308,18 +1349,18 @@ function CustomBagAiCard() {
   };
   const updateItem = (id: string, patch: Partial<BagItem>) => {
     setBagItems((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
-    setResult(null);
+    setWeekSpread(null);
   };
   const removeItem = (id: string) => {
     setBagItems((current) => current.filter((item) => item.id !== id));
-    setResult(null);
+    setWeekSpread(null);
   };
-  const bagTotal = bagItems.reduce((sum, item) => sum + bagItemCost(item), 0);
-  const runAiPairing = () => { if (bagItems.length) setResult(pairBagIntoMeals(bagItems)); };
+  const estimate = useMemo(() => estimateBagWeek(bagItems, prefs), [bagItems, prefs]);
+  const runAiSpread = () => { if (bagItems.length) setWeekSpread(spreadBagAcrossWeek(bagItems)); };
 
   return <section className="paper-card overflow-hidden !mb-2 bag-ai-card">
     <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center justify-between gap-3 text-left" aria-expanded={open} data-testid="button-toggle-bag-ai">
-      <div className="min-w-0"><h2 className="truncate text-sm font-bold">🛒 Tự Nhập Túi Đồ Đã Mua / Sẽ Mua</h2><p className="mt-0.5 truncate text-[10px] text-muted-foreground">Nhập tự do hoặc chọn nhanh, để AI ghép mâm cơm đủ chất</p></div>
+      <div className="min-w-0"><h2 className="truncate text-sm font-bold">🛒 Tự Nhập Túi Đồ Đã Mua / Sẽ Mua</h2><p className="mt-0.5 truncate text-[10px] text-muted-foreground">Nhập tự do hoặc chọn nhanh, để AI dự toán & rải món cho cả tuần</p></div>
       <ChevronDown size={17} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
     </button>
     {open && <div className="mt-3 space-y-3">
@@ -1328,26 +1369,31 @@ function CustomBagAiCard() {
         <button onClick={addFromText} className="tactile shrink-0 rounded-xl bg-primary px-3 py-2.5 text-xs font-bold text-primary-foreground" aria-label="Thêm từ văn bản" data-testid="button-add-bag-text"><Plus size={15} /></button>
       </div>
       <div className="flex flex-wrap gap-1.5">{BAG_QUICK_CHIPS.map((chip) => <button key={chip} onClick={() => addItem(chip)} className="bag-chip" data-testid={`button-chip-${chip}`}>+ {chip}</button>)}</div>
-      {bagItems.length > 0 && <div className="space-y-1.5">{bagItems.map((item) => <div key={item.id} className="bag-item-row">
-        <span className="bag-item-name truncate">{item.group === 'dam' ? '🍖' : '🥬'} {item.name}</span>
-        <input type="number" min="0" value={item.qty} onChange={(event) => updateItem(item.id, { qty: Math.max(0, Number(event.target.value) || 0) })} className="bag-item-input" aria-label={`Khối lượng ${item.name}`} data-testid={`input-bag-qty-${item.id}`} />
-        <button type="button" onClick={() => updateItem(item.id, { unit: item.unit === 'kg' ? 'g' : 'kg' })} className="bag-item-unit-toggle" data-testid={`button-bag-unit-${item.id}`}>{item.unit}</button>
-        <input type="number" min="0" value={item.pricePerKg} onChange={(event) => updateItem(item.id, { pricePerKg: Math.max(0, Number(event.target.value) || 0) })} className="bag-item-input" aria-label={`Đơn giá ${item.name} mỗi kg`} data-testid={`input-bag-price-${item.id}`} />
-        <span className="shrink-0 text-[10px] font-bold text-primary">{money(bagItemCost(item))}</span>
-        <button onClick={() => removeItem(item.id)} className="shrink-0 rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive" aria-label={`Xóa ${item.name}`} data-testid={`button-remove-bag-${item.id}`}><Trash2 size={13} /></button>
+      {bagItems.length > 0 && <div className="space-y-1.5">{bagItems.map((item) => {
+        const itemDays = bagItemGrams(item) / estimate.perDayNeed[item.group];
+        return <div key={item.id} className="bag-item-row">
+          <span className="bag-item-name truncate">{item.group === 'dam' ? '🍖' : '🥬'} {item.name}</span>
+          <input type="number" min="0" value={item.qty} onChange={(event) => updateItem(item.id, { qty: Math.max(0, Number(event.target.value) || 0) })} className="bag-item-input" aria-label={`Khối lượng ${item.name}`} data-testid={`input-bag-qty-${item.id}`} />
+          <button type="button" onClick={() => updateItem(item.id, { unit: item.unit === 'kg' ? 'g' : 'kg' })} className="bag-item-unit-toggle" data-testid={`button-bag-unit-${item.id}`}>{item.unit}</button>
+          <input type="number" min="0" value={item.pricePerKg} onChange={(event) => updateItem(item.id, { pricePerKg: Math.max(0, Number(event.target.value) || 0) })} className="bag-item-input" aria-label={`Đơn giá ${item.name} mỗi kg`} data-testid={`input-bag-price-${item.id}`} />
+          <span className="shrink-0 text-[10px] font-bold text-primary" data-testid={`text-bag-days-${item.id}`}>{money(bagItemCost(item))} · Đủ {itemDays.toFixed(1)} ngày</span>
+          <button onClick={() => removeItem(item.id)} className="shrink-0 rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive" aria-label={`Xóa ${item.name}`} data-testid={`button-remove-bag-${item.id}`}><Trash2 size={13} /></button>
+        </div>;
+      })}</div>}
+      {bagItems.length > 0 && <div className="bag-estimate-card">
+        <p className="bag-estimate-title">🛒 Dự toán túi đồ tuần này ({BAG_MEALS_PER_WEEK} bữa · {headcount} người)</p>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <span className="text-xs font-bold">📊 Tổng chi phí: <span className="text-primary">{money(estimate.totalCost)}</span></span>
+          <span className="text-[11px] font-bold text-muted-foreground">💡 ~{money(estimate.totalCost / BAG_MEALS_PER_WEEK)} / bữa mâm cơm 3 món</span>
+        </div>
+        {estimate.shortages.length > 0 ? <div className="mt-2 space-y-1.5">{estimate.shortages.map((shortage) => <div key={shortage.group} className="budget-alert-low rounded-xl px-3 py-2 text-[11px] font-bold leading-5" data-testid={`text-bag-shortage-${shortage.group}`}>⚠️ Thiếu {BAG_GROUP_LABELS[shortage.group]} cho khoảng {shortage.missingDays.toFixed(1)} ngày cuối tuần. Gợi ý mua thêm ~{money(shortage.missingCost)} {shortage.topup} để đủ 7 ngày.</div>)}</div> : <div className="budget-alert-high mt-2 rounded-xl px-3 py-2 text-[11px] font-bold leading-5" data-testid="text-bag-surplus">{estimate.surplusDays > 0.4 ? `✅ Túi đồ đủ ăn trong ${Math.floor(estimate.overallDays)} ngày, dư ra ${money(estimate.surplusCost)} có thể trích vào Quỹ Tích Sản 2036.` : '✅ Túi đồ vừa khớp trọn 7 ngày, không dư không thiếu.'}</div>}
+      </div>}
+      {bagItems.length > 0 && <button onClick={runAiSpread} className="bag-ai-button tactile flex w-full items-center justify-center gap-1.5" data-testid="button-ai-spread-week"><Sparkles size={14} /> ⚡ AI Tự Động Phân Bổ Vào Thực Đơn 7 Ngày ({BAG_MEALS_PER_WEEK} Bữa)</button>}
+      {weekSpread && <div className="space-y-1.5 pt-1">{weekSpread.map((day) => <div key={day.day} className="bag-day-row">
+        <span className="bag-day-name">{day.day}</span>
+        <span className="bag-day-dish">{day.dam ? <>🍖 {day.dam.name} <em>({day.damMethod})</em></> : <span className="text-muted-foreground">Chưa có món đạm</span>}</span>
+        <span className="bag-day-dish">{day.rau ? <>🥬 {day.rau.name}</> : <span className="text-muted-foreground">Chưa có rau</span>}</span>
       </div>)}</div>}
-      {bagItems.length > 0 && <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl bg-secondary/50 px-3 py-2.5">
-        <span className="text-xs font-bold">Tổng túi đồ: <span className="text-primary">{money(bagTotal)}</span></span>
-        <button onClick={runAiPairing} className="bag-ai-button tactile inline-flex items-center gap-1.5" data-testid="button-ai-pair-meals"><Sparkles size={14} /> ⚡ AI Ghép Mâm Cơm Đủ Chất</button>
-      </div>}
-      {result && <div className="space-y-2.5 pt-1">
-        <div className="grid gap-2.5 sm:grid-cols-2">{result.meals.map((meal) => <div key={meal.label} className="bag-meal-card">
-          <div className="flex items-center justify-between gap-2"><span className="bag-meal-title">{meal.label}</span><span className="bag-meal-cost">{money(meal.cost)}</span></div>
-          {[...meal.dam.map((item) => ({ ...item, tag: 'Đạm' })), ...meal.rau.map((item) => ({ ...item, tag: 'Rau' })), ...meal.canh.map((item) => ({ ...item, tag: 'Canh' }))].map((item) => <div key={item.id} className="bag-dish-row"><span className="truncate">{item.tag} · {item.name}</span><span className="shrink-0 font-bold">{money(bagItemCost(item))}</span></div>)}
-        </div>)}</div>
-        <p className="text-[11px] font-bold text-muted-foreground">Chi phí trung bình mỗi bữa: <span className="text-primary">{money(result.avgPerMeal)}</span></p>
-        {result.suggestions.length > 0 && <div className="space-y-1.5">{result.suggestions.map((tip) => <div key={tip} className="bag-suggestion"><Sparkles size={12} className="mt-0.5 shrink-0" />{tip}</div>)}</div>}
-      </div>}
     </div>}
   </section>;
 }

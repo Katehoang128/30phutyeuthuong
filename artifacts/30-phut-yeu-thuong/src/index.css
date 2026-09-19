@@ -197,6 +197,12 @@
 .bag-meal-cost { color: #2B2D42; font-size: 15px; font-weight: 700; }
 .bag-dish-row { display: flex; min-width: 0; justify-content: space-between; gap: 6px; border-top: 1px dashed rgba(43, 45, 66, .1); padding: 5px 0; color: #6C757D; font-size: 11px; font-weight: 600; }
 .bag-suggestion { display: flex; align-items: flex-start; gap: 6px; border-radius: 10px; background: rgba(217, 107, 67, .09); padding: 8px 10px; color: #9f4426; font-size: 11px; font-weight: 600; line-height: 15px; }
+.bag-estimate-card { border-radius: 12px; border: 1px solid rgba(58, 107, 76, .16); background: #F0F4F1; padding: 11px; }
+.bag-estimate-title { color: #3A6B4C; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.bag-day-row { display: grid; grid-template-columns: 56px 1fr 1fr; align-items: center; gap: 6px; border-radius: 12px; border: 1px solid rgba(43, 45, 66, .08); background: #fff; padding: 8px 9px; }
+.bag-day-name { color: #3A6B4C; font-size: 11px; font-weight: 700; }
+.bag-day-dish { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #2B2D42; font-size: 11px; font-weight: 600; }
+.bag-day-dish em { color: #6C757D; font-style: normal; }
 .tactile { transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease; }
 .tactile:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(110, 84, 58, .11); }
 .tactile:active { transform: translateY(1px); }
