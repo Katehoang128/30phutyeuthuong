@@ -168,6 +168,21 @@
 .shopping-budget-strip { display: flex; min-width: 0; align-items: center; gap: 8px; overflow-x: auto; padding-top: 8px; color: #2B2D42; font-size: 11px; font-weight: 600; white-space: nowrap; }
 .shopping-budget-track { display: block; width: 80px; height: 6px; flex: 0 0 80px; overflow: hidden; border-radius: 999px; background: #E8F0EC; }
 .shopping-budget-track span { display: block; height: 100%; border-radius: inherit; background: #3A6B4C; transition: width .25s ease; }
+.meal-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.meal-grid-card { display: flex; min-width: 0; aspect-ratio: 1; flex-direction: column; border: 1px solid rgba(58, 107, 76, .14); border-radius: 12px; background: #fff; padding: 10px; box-shadow: 0 4px 10px rgba(43, 45, 66, .05); }
+.meal-grid-group { color: #3A6B4C; font-size: 11px; font-weight: 700; line-height: 14px; }
+.meal-grid-name { display: -webkit-box; margin-top: 5px; overflow: hidden; color: #2B2D42; font-size: 14px; font-weight: 600; line-height: 18px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.meal-grid-kcal { display: inline-flex; width: fit-content; margin-top: 6px; border-radius: 999px; background: #F0F4F1; padding: 2px 6px; color: #6C757D; font-size: 11px; line-height: 14px; }
+.meal-grid-actions { display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-top: auto; padding-top: 8px; }
+.meal-grid-action, .meal-grid-favorite { display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; color: #3A6B4C; font-size: 11px; font-weight: 700; }
+.meal-grid-action { gap: 3px; padding: 6px 8px; background: #E8F0EC; }
+.meal-grid-favorite { height: 30px; width: 30px; border: 1px solid rgba(58, 107, 76, .18); }
+.meal-grid-favorite.is-favorite { background: #3A6B4C; color: #fff; }
+.meal-guide { margin-top: 10px; border-top: 1px solid rgba(43, 45, 66, .08); padding-top: 8px; color: #3A6B4C; font-size: 12px; font-weight: 700; }
+.meal-guide summary { cursor: pointer; list-style: none; }
+.meal-guide-content { display: grid; gap: 10px; margin-top: 8px; color: #6C757D; font-size: 11px; font-weight: 400; line-height: 17px; }
+.meal-guide-content strong { color: #2B2D42; }
+.meal-guide-content ol { margin: 3px 0 0 16px; }
 .tactile { transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease; }
 .tactile:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(110, 84, 58, .11); }
 .tactile:active { transform: translateY(1px); }
