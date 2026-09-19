@@ -1192,21 +1192,18 @@ function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomIte
   };
   const boughtCount = [...bought].filter((name) => shopping[name]).length + customItems.filter((item) => item.bought).length;
   const totalCount = entries.length + customItems.length;
+  const budgetPercent = targetBudget > 0 ? Math.min(100, Math.round((totalCost / targetBudget) * 100)) : 0;
+  const remainingBudget = Math.max(0, targetBudget - totalCost);
   return <div className="space-y-5 pb-5">
-    <section className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
-      <div><p className="text-xs font-bold uppercase tracking-[.17em] text-primary">Đi chợ</p><h1 className="display-font mt-1 text-4xl font-bold tracking-tight">Túi đi chợ tuần này</h1><p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Tươi sống mua nhanh, đồ khô mua đúng chỗ. Chạm vào món nhà mình đã có để trừ khỏi dự toán.</p></div>
+    <section className="shopping-page-header">
+      <div className="shopping-title-row"><div><p className="text-[10px] font-bold uppercase tracking-[.15em] text-primary">Đi chợ</p><h1 className="shopping-page-title">Túi đi chợ tuần này</h1></div>
       <div className="flex flex-wrap gap-2">
-        <button onClick={copyShoppingList} className="warm-cta tactile inline-flex items-center justify-center gap-2 shadow-[0_8px_18px_rgba(217,107,67,0.22)]" data-testid="button-share-zalo">{copied ? <Check size={15} /> : <Share2 size={15} />}{copied ? 'Đã copy danh sách' : '📱 Gửi Danh Sách Đi Chợ Cho Chồng Qua Zalo'}</button>
-        <button onClick={() => window.print()} className="tactile inline-flex items-center gap-2 rounded-full border border-[hsl(34_31%_90%)] bg-white px-4 py-2.5 text-xs font-bold shadow-sm" data-testid="button-print-shopping"><Printer size={15} /> In danh sách</button>
+        <button onClick={copyShoppingList} className="shopping-action warm-cta tactile inline-flex items-center justify-center gap-1.5" data-testid="button-share-zalo">{copied ? <Check size={14} /> : <Share2 size={14} />}{copied ? 'Đã copy' : '📱 Gửi Zalo'}</button>
+        <button onClick={() => window.print()} className="shopping-action tactile inline-flex items-center gap-1.5 rounded-full border border-[hsl(34_31%_90%)] bg-white font-bold shadow-sm" data-testid="button-print-shopping"><Printer size={14} /> In</button>
+      </div></div>
+      <div className="shopping-budget-strip" aria-label="Tiến độ ngân sách tuần"><span className="shrink-0">💰 Đã chi: {money(totalCost)} / {money(targetBudget)}</span><span className="shopping-budget-track" aria-hidden="true"><span style={{ width: `${budgetPercent}%` }} /></span><span className="shrink-0">Còn lại: {money(remainingBudget)} ({boughtCount}/{totalCount} món)</span>
       </div>
     </section>
-    <div className="paper-card p-5">
-      <BudgetProgress totalCost={totalCost} targetBudget={targetBudget} />
-    </div>
-    <div className="paper-card flex flex-wrap items-center justify-between gap-4 bg-[hsl(41_100%_91%)] p-4 md:p-5">
-      <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-accent"><ShoppingBasket size={19} /></span><div><p className="text-xs font-bold text-muted-foreground">Tiến độ đi chợ</p><p className="text-xl font-bold">{boughtCount}<span className="text-sm font-medium text-muted-foreground"> / {totalCount} món</span></p></div></div>
-      <div className="text-right"><p className="text-xs font-bold text-muted-foreground">Ước tính còn cần chi</p><p className="text-xl font-bold text-primary">{money(totalCost)}</p><p className="mt-1 text-[10px] text-muted-foreground">Đã trừ món nhà mình có sẵn</p></div>
-    </div>
     <ShoppingGroupV2 title="Thực phẩm tươi sống" subtitle="Thịt, cá, tôm, rau và củ" items={freshItems} bought={bought} toggle={toggle} updateQuantity={updateQuantity} kind="fresh" />
     <ShoppingGroupV2 title="Đồ khô & gia vị" subtitle="Gạo, bún, tôm khô và các món để dành" items={dryItems} bought={bought} toggle={toggle} updateQuantity={updateQuantity} kind="dry" />
     <section className="paper-card border-[hsl(105_40%_45%/.3)] bg-secondary/45 p-4 md:p-5">

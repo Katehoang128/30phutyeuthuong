@@ -161,6 +161,13 @@
 .shopping-quantity { width: 42px; border: 0; border-bottom: 1px solid rgba(43, 45, 66, .14); background: transparent; padding: 1px; text-align: right; color: var(--text-main); font-size: 10px; font-weight: 700; outline: none; }
 .shopping-link-icon { display: inline-flex; height: 25px; width: 25px; flex: 0 0 auto; align-items: center; justify-content: center; border-radius: 7px; background: rgba(58, 107, 76, .1); color: var(--primary-green); }
 .shopping-group-header { min-height: 48px; }
+.shopping-page-header { padding: 8px 0 10px; }
+.shopping-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.shopping-page-title { color: #2B2D42; font-size: 18px; font-weight: 600; line-height: 22px; }
+.shopping-action { height: 38px; padding: 8px 12px; font-size: 13px; white-space: nowrap; }
+.shopping-budget-strip { display: flex; min-width: 0; align-items: center; gap: 8px; overflow-x: auto; padding-top: 8px; color: #2B2D42; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.shopping-budget-track { display: block; width: 80px; height: 6px; flex: 0 0 80px; overflow: hidden; border-radius: 999px; background: #E8F0EC; }
+.shopping-budget-track span { display: block; height: 100%; border-radius: inherit; background: #3A6B4C; transition: width .25s ease; }
 .tactile { transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease; }
 .tactile:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(110, 84, 58, .11); }
 .tactile:active { transform: translateY(1px); }
