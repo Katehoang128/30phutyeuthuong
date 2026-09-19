@@ -42,9 +42,45 @@ const PREFS_STORAGE_KEY = '30phut-preferences';
 const PLAN_STORAGE_KEY = '30phut-plan';
 const BOUGHT_STORAGE_KEY = '30phut-bought';
 const DEVICE_ID_STORAGE_KEY = '30phut-device-id';
+const SPEND_LOG_STORAGE_KEY = '30phut-spend-log';
 
 function currentMonth() {
   return new Date().toISOString().slice(0, 7);
+}
+
+type SpendRecord = { weekKey: string; estimated: number; actual: number; recordedAt: string };
+function readSpendLog(): SpendRecord[] {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(SPEND_LOG_STORAGE_KEY) || 'null') as SpendRecord[] | null;
+    return Array.isArray(saved) ? saved : [];
+  } catch {
+    return [];
+  }
+}
+// ISO-8601 week key ("2026-W38"), anchored to Vietnam local date so it lines up with when người dùng thực sự đi chợ.
+function isoWeekKey(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now);
+  const value = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value || 0);
+  const d = new Date(Date.UTC(value('year'), value('month') - 1, value('day')));
+  const dayNum = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - dayNum + 3);
+  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const firstThursdayDayNum = (firstThursday.getUTCDay() + 6) % 7;
+  const weekNum = 1 + Math.round(((d.getTime() - firstThursday.getTime()) / 86400000 - 3 + firstThursdayDayNum) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNum).padStart(2, '0')}`;
+}
+function weekKeyLabel(weekKey: string) {
+  const [yearStr, weekStr] = weekKey.split('-W');
+  const year = Number(yearStr);
+  const week = Number(weekStr);
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4Day = (jan4.getUTCDay() + 6) % 7;
+  const monday = new Date(jan4);
+  monday.setUTCDate(jan4.getUTCDate() - jan4Day + (week - 1) * 7);
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+  const fmt = (date: Date) => `${String(date.getUTCDate()).padStart(2, '0')}/${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+  return `${fmt(monday)} - ${fmt(sunday)}`;
 }
 
 function getDeviceId() {
@@ -719,6 +755,7 @@ function Shell() {
   const [globalEmail, setGlobalEmail] = useState(() => window.localStorage.getItem('30phut-user-email') || '');
   const [deviceId] = useState(getDeviceId);
   const [plan, setPlan] = useState(() => readStoredPlan(prefs));
+  const [spendLog, setSpendLog] = useState<SpendRecord[]>(readSpendLog);
   const [bought, setBought] = useState<Set<string>>(() => {
     try {
       return new Set(JSON.parse(window.localStorage.getItem(BOUGHT_STORAGE_KEY) || '[]') as string[]);
@@ -775,6 +812,16 @@ function Shell() {
   useEffect(() => {
     window.localStorage.setItem(BOUGHT_STORAGE_KEY, JSON.stringify([...bought]));
   }, [bought]);
+  useEffect(() => {
+    window.localStorage.setItem(SPEND_LOG_STORAGE_KEY, JSON.stringify(spendLog));
+  }, [spendLog]);
+  // Actual Spend Tracker: upserts this ISO week's record (estimate taken at record time) so the gap
+  // between app dự toán and thực chi tại Bách Hóa Xanh becomes visible instead of silent.
+  const recordActualSpend = (actual: number) => {
+    const weekKey = isoWeekKey();
+    setSpendLog((current) => [{ weekKey, estimated: totalCost, actual, recordedAt: new Date().toISOString() }, ...current.filter((record) => record.weekKey !== weekKey)].slice(0, 12));
+    trackEvent('actual_spend_recorded', { estimated: Math.round(totalCost), actual: Math.round(actual) });
+  };
   useEffect(() => {
     const syncPlanWithVietnamDate = () => {
       setPlan((current) => {
@@ -879,8 +926,8 @@ function Shell() {
   }, [plan, units, prefs, bought]);
 
   let page;
-  if (location === '/shopping') page = <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} setQuantityOverrides={setQuantityOverrides} targetBudget={prefs.targetBudget || 1200000} prefs={prefs} plan={accessiblePlan} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} onSwapDish={swapDish} />;
-  else if (location === '/costs') page = <div className="space-y-5"><CostsPage shopping={shopping} prefs={prefs} totalCost={totalCost} plan={accessiblePlan} /><KitchenEquityCard weeklySaving={Math.max(0, (prefs.targetBudget || 1200000) - totalCost)} /></div>;
+  if (location === '/shopping') page = <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} setQuantityOverrides={setQuantityOverrides} targetBudget={prefs.targetBudget || 1200000} prefs={prefs} plan={accessiblePlan} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} onSwapDish={swapDish} spendLog={spendLog} onRecordSpend={recordActualSpend} />;
+  else if (location === '/costs') page = <div className="space-y-5"><CostsPage shopping={shopping} prefs={prefs} totalCost={totalCost} plan={accessiblePlan} spendLog={spendLog} /><KitchenEquityCard weeklySaving={Math.max(0, (prefs.targetBudget || 1200000) - totalCost)} /></div>;
   else if (location === '/ask-ai') page = <AskAiPageV2 prefs={prefs} isPro={isPro} onUpgrade={() => openUpgrade('ai_limit')} />;
   else page = <HomePage plan={plan} isPro={isPro} onUpgrade={() => openUpgrade('locked_week')} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} totalCost={totalCost} forceBudget={forceBudget} budgetNotice={budgetNotice} swapNotice={swapNotice} onSwapDish={swapDish} />;
   return <div className="app-shell grain"><DesktopSidebar location={location} /><header className="site-header border-b border-black/5"><div className="site-header-inner flex items-center justify-between gap-3"><Link href="/" className="site-header-brand flex items-center gap-3 no-underline" data-testid="link-home"><span className="flex h-11 w-11 items-center justify-center rounded-[18px] bg-[linear-gradient(135deg,hsl(113_25%_42%),hsl(113_34%_64%))] text-white shadow-[0_8px_18px_rgba(74,124,89,0.22)]"><ChefHat size={23} strokeWidth={2.4} /></span><span><span className="display-font block text-xl font-bold tracking-tight text-[hsl(113_25%_32%)]">30 Phút</span><span className="block text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">Yêu thương</span></span></Link><div className="top-actions flex items-center gap-2">{isPro ? <span className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-[hsl(31_90%_83%)] px-3 py-1.5 text-xs font-bold text-[hsl(24_28%_18%)]"><Crown size={13} /> Thành viên Pro</span> : <button onClick={() => openUpgrade('header')} className="tactile hidden md:inline-flex items-center gap-1.5 rounded-full bg-[linear-gradient(135deg,hsl(113_25%_42%),hsl(113_34%_64%))] px-3 py-2 text-xs font-bold text-white" data-testid="button-header-upgrade"><Crown size={13} /> Nâng cấp Pro</button>}<button onClick={() => window.print()} className="tactile hidden md:flex h-10 w-10 items-center justify-center rounded-full border border-[hsl(36_40%_88%)] bg-white text-muted-foreground" aria-label="In trang" data-testid="button-print"><Printer size={17} /></button>
@@ -1300,7 +1347,7 @@ function ShoppingPage({ shopping, bought, setBought, customItems, setCustomItems
 }
 function ShoppingGroup({ category, items, bought, toggle }: { category: string; items: [string, { qty: number; unit?: string }][]; bought: Set<string>; toggle: (name: string) => void }) { return <section className="paper-card overflow-hidden"><div className="flex items-center justify-between border-b bg-muted/45 px-4 py-3"><h2 className="text-sm font-bold">{category}</h2><span className="rounded-full bg-card px-2.5 py-1 text-[10px] font-bold text-muted-foreground">{items.length} món</span></div><div className="divide-y">{items.map(([name, value]) => { const done = bought.has(name); return <div key={name} className={`flex items-center justify-between gap-3 px-4 py-3.5 transition-opacity ${done ? 'opacity-45' : ''}`}><button onClick={() => toggle(name)} className="flex min-w-0 items-center gap-3 text-left" data-testid={`button-bought-${name}`}><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${done ? 'border-[hsl(113_40%_45%)] bg-[hsl(113_40%_45%)] text-white' : 'border-[hsl(37_43%_74%)] bg-card'}`}>{done && <Check size={14} strokeWidth={3} />}</span><span className={`text-sm font-semibold ${done ? 'line-through' : ''}`}>{name}</span></button><span className="shrink-0 text-xs font-bold text-muted-foreground">{displayQuantity(value)}</span></div>; })}</div></section>; }
 
-function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomItems, totalCost, setQuantityOverrides, targetBudget, prefs, plan, favoriteDishes, setFavoriteDishes, onSwapDish }: { shopping: Aggregate; bought: Set<string>; setBought: (value: Set<string>) => void; customItems: { name: string; bought: boolean }[]; setCustomItems: (value: { name: string; bought: boolean }[]) => void; totalCost: number; setQuantityOverrides: (value: Record<string, number> | ((current: Record<string, number>) => Record<string, number>)) => void; targetBudget: number; prefs: Preferences; plan: DayPlan[]; favoriteDishes: Set<string>; setFavoriteDishes: (value: Set<string>) => void; onSwapDish: (dayIndex: number, slot: DishSlot) => void }) {
+function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomItems, totalCost, setQuantityOverrides, targetBudget, prefs, plan, favoriteDishes, setFavoriteDishes, onSwapDish, spendLog, onRecordSpend }: { shopping: Aggregate; bought: Set<string>; setBought: (value: Set<string>) => void; customItems: { name: string; bought: boolean }[]; setCustomItems: (value: { name: string; bought: boolean }[]) => void; totalCost: number; setQuantityOverrides: (value: Record<string, number> | ((current: Record<string, number>) => Record<string, number>)) => void; targetBudget: number; prefs: Preferences; plan: DayPlan[]; favoriteDishes: Set<string>; setFavoriteDishes: (value: Set<string>) => void; onSwapDish: (dayIndex: number, slot: DishSlot) => void; spendLog: SpendRecord[]; onRecordSpend: (actual: number) => void }) {
   const [tab, setTab] = useState<'week' | 'day'>('week');
   const [newItem, setNewItem] = useState('');
   const [copied, setCopied] = useState(false);
@@ -1374,6 +1421,7 @@ function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomIte
       </div>}
     </section>
     {tab === 'week' ? <>
+      <ActualSpendTracker estimated={totalCost} spendLog={spendLog} onRecordSpend={onRecordSpend} />
       <ShoppingGroupV2 title="Thực phẩm tươi sống" subtitle="Thịt, cá, tôm, rau và củ" items={freshItems} bought={bought} toggle={toggle} updateQuantity={updateQuantity} kind="fresh" />
       <ShoppingGroupV2 title="Đồ khô & gia vị" subtitle="Gạo, bún, tôm khô và các món để dành" items={dryItems} bought={bought} toggle={toggle} updateQuantity={updateQuantity} kind="dry" />
       <section className="paper-card border-[hsl(113_40%_45%/.3)] bg-secondary/45 p-4 md:p-5">
@@ -1383,6 +1431,47 @@ function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomIte
       <section className="paper-card p-5"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-muted-foreground">Tự thêm</p><h2 className="display-font mt-1 text-2xl font-bold">Món cần nhớ</h2></div><Plus size={20} className="text-primary" /></div><div className="mt-4 flex gap-2"><input value={newItem} onChange={(event) => setNewItem(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && add()} placeholder="Ví dụ: khăn giấy, nước rửa rau" className="min-w-0 flex-1 rounded-xl border bg-background px-3 py-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-custom-shopping" /><button onClick={add} className="tactile rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground" data-testid="button-add-shopping"><Plus size={16} /></button></div><div className="mt-3 space-y-2">{customItems.length === 0 ? <p className="rounded-xl border border-dashed p-4 text-center text-xs text-muted-foreground">Chưa có món tự thêm. Danh sách này chỉ của riêng nhà mình.</p> : customItems.map((item, index) => <div key={`${item.name}-${index}`} className={`flex items-center justify-between rounded-xl border bg-background px-3 py-3 ${item.bought ? 'opacity-50' : ''}`}><button onClick={() => setCustomItems(customItems.map((entry, i) => i === index ? { ...entry, bought: !entry.bought } : entry))} className="flex min-w-0 items-center gap-3 text-left text-sm font-bold" data-testid={`button-toggle-custom-${index}`}><span className={`flex h-5 w-5 items-center justify-center rounded-full border ${item.bought ? 'border-[hsl(113_40%_45%)] bg-[hsl(113_40%_45%)] text-white' : ''}`}>{item.bought && <Check size={12} />}</span><span className={item.bought ? 'line-through' : ''}>{item.name}</span></button><button onClick={() => setCustomItems(customItems.filter((_, i) => i !== index))} className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-destructive" aria-label="Xóa món tự thêm" data-testid={`button-remove-custom-${index}`}><Trash2 size={15} /></button></div>)}</div></section>
     </> : <ShoppingDayView plan={plan} prefs={prefs} favorites={favoriteDishes} setFavorites={setFavoriteDishes} onSwap={onSwapDish} />}
   </div>;
+}
+
+// Actual Spend Tracker: closes the loop between app dự toán và số tiền thực chi tại BHX, vì app
+// không thể khoá giỏ hàng bên ngoài — chỉ có thể làm cho khoảng lệch đó hiện rõ ra sau mỗi lần đi chợ.
+function ActualSpendTracker({ estimated, spendLog, onRecordSpend }: { estimated: number; spendLog: SpendRecord[]; onRecordSpend: (actual: number) => void }) {
+  const weekKey = isoWeekKey();
+  const thisWeek = spendLog.find((record) => record.weekKey === weekKey);
+  const [value, setValue] = useState(thisWeek ? String(Math.round(thisWeek.actual)) : '');
+  const [editing, setEditing] = useState(!thisWeek);
+
+  const submit = () => {
+    const actual = Number(value);
+    if (!Number.isFinite(actual) || actual <= 0) return;
+    onRecordSpend(actual);
+    setEditing(false);
+  };
+
+  if (thisWeek && !editing) {
+    const delta = thisWeek.actual - thisWeek.estimated;
+    const deltaPercent = thisWeek.estimated > 0 ? Math.round((delta / thisWeek.estimated) * 100) : 0;
+    const isClose = Math.abs(deltaPercent) <= 5;
+    const isOver = delta > 0 && !isClose;
+    return <section className="paper-card p-4 md:p-5" data-testid="card-actual-spend-summary">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[.15em] text-muted-foreground">Đối chiếu chi tiêu thực tế · Tuần {weekKeyLabel(weekKey)}</p><p className="mt-1 text-sm leading-6">Dự toán <strong>{money(thisWeek.estimated)}</strong> · Thực chi <strong>{money(thisWeek.actual)}</strong></p></div>
+        <button onClick={() => { setEditing(true); setValue(String(Math.round(thisWeek.actual))); }} className="shrink-0 rounded-full p-2 text-muted-foreground hover:bg-muted" aria-label="Sửa số tiền thực chi" data-testid="button-edit-actual-spend"><RefreshCw size={14} /></button>
+      </div>
+      <div className={`mt-3 rounded-xl px-3 py-2.5 text-xs font-bold leading-5 ${isOver ? 'budget-alert-low' : 'budget-alert-high'}`} data-testid="text-actual-spend-delta">
+        {isClose ? `🎯 Sát dự toán! Chỉ lệch ${money(Math.abs(delta))} (${Math.abs(deltaPercent)}%) — kỷ luật chi tiêu rất tốt.` : isOver ? `⚠️ Vượt dự toán ${money(delta)} (${deltaPercent}%) so với app tính. Lần đi chợ tới, mang theo checklist và bám sát giá từng món trong danh sách nhé.` : `✅ Chi ít hơn dự toán ${money(Math.abs(delta))} (${Math.abs(deltaPercent)}%) — có thể trích khoản dư này vào Quỹ Tích Sản 2036!`}
+      </div>
+    </section>;
+  }
+
+  return <section className="paper-card p-4 md:p-5" data-testid="card-actual-spend-input">
+    <p className="text-xs font-bold uppercase tracking-[.15em] text-muted-foreground">Đối chiếu chi tiêu thực tế</p>
+    <p className="mt-1 text-sm leading-6 text-muted-foreground">App đang dự toán tuần này <strong className="text-foreground">{money(estimated)}</strong>. Đi chợ xong rồi? Ghi lại số tiền thực đã chi ở Bách Hóa Xanh để biết mình có mua đúng dự toán không.</p>
+    <div className="mt-3 flex gap-2">
+      <input inputMode="numeric" value={value} onChange={(event) => setValue(event.target.value.replace(/\D/g, ''))} onKeyDown={(event) => event.key === 'Enter' && submit()} placeholder="VD: 520000" className="min-w-0 flex-1 rounded-xl border bg-background px-3 py-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-actual-spend" />
+      <button onClick={submit} className="tactile shrink-0 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground" data-testid="button-record-actual-spend">Ghi lại</button>
+    </div>
+  </section>;
 }
 
 function ShoppingDayView({ plan, prefs, favorites, setFavorites, onSwap }: { plan: DayPlan[]; prefs: Preferences; favorites: Set<string>; setFavorites: (value: Set<string>) => void; onSwap: (dayIndex: number, slot: DishSlot) => void }) {
@@ -1500,7 +1589,7 @@ function CustomBagAiCard({ prefs }: { prefs: Preferences }) {
   </section>;
 }
 
-function CostsPage({ shopping, prefs, totalCost, plan }: { shopping: Aggregate; prefs: Preferences; totalCost: number; plan: DayPlan[] }) { const ingredients = Object.entries(shopping).reduce((sum, [name, value]) => sum + priceFor(name, value.qty), 0); const remaining = (prefs.targetBudget || 1200000) - totalCost; const bars = plan.map((day) => Math.round(mealCalories(day).cal * unitsOf(prefs))); const max = Math.max(...bars); return <div className="space-y-5"><section className="flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><p className="text-xs font-bold uppercase tracking-[.17em] text-primary">Chi phí</p><h1 className="display-font mt-1 text-4xl font-bold tracking-tight">Tiền đi chợ, nhìn là hiểu.</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Không cần cộng tay. Công thức giá lấy theo lượng nguyên liệu thật trong thực đơn tuần.</p></div><Link href="/shopping" className="tactile inline-flex w-fit items-center gap-2 rounded-full border bg-card px-4 py-2.5 text-xs font-bold" data-testid="link-costs-shopping">Xem danh sách <ArrowUpRight size={14} /></Link></section><div className="paper-card p-5"><h3 className="text-sm font-bold flex items-center gap-2 mb-4"><WalletCards size={17} className="text-primary" /> Ngân sách tuần này</h3><BudgetProgress totalCost={totalCost} targetBudget={prefs.targetBudget || 1200000} /></div><section className="grid gap-4 sm:grid-cols-3"><StatCard label="Dự kiến cả tuần" value={money(totalCost)} accent="primary" /><StatCard label="Nguyên liệu chính" value={money(ingredients)} /><StatCard label={remaining >= 0 ? 'Còn trong ngân sách' : 'Vượt ngân sách'} value={money(Math.abs(remaining))} accent={remaining >= 0 ? 'sage' : 'berry'} /></section><section className="paper-card p-5 md:p-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-muted-foreground">Nhịp chi tiêu</p><h2 className="display-font mt-1 text-2xl font-bold">Mức {budgetLabels[prefs.budget].toLowerCase()}</h2></div><WalletCards size={21} className="text-primary" /></div><div className="mt-6 flex h-44 items-end gap-2 border-b border-l px-2 pb-0 pt-4 sm:gap-4">{bars.map((value, index) => <div key={DAY_NAMES[index]} className="flex h-full flex-1 flex-col items-center justify-end gap-2"><div className="w-full max-w-9 rounded-t-lg bg-[hsl(18_80%_56%/.82)] transition-[height] duration-500" style={{ height: `${Math.max(13, value / max * 100)}%` }} /><span className="text-[10px] font-bold text-muted-foreground">{index === 6 ? 'CN' : `T${index + 2}`}</span></div>)}</div><p className="mt-4 text-xs leading-5 text-muted-foreground">Mỗi ngày gồm sáng, trưa, tối và phần gia vị phân bổ theo tuần. Mức này là ước tính tham khảo — giá chợ có thể thay đổi theo mùa.</p></section><section className="paper-card p-5 md:p-6"><h2 className="display-font text-2xl font-bold">Nếu muốn tiết kiệm thêm</h2><div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="rounded-2xl bg-secondary p-4"><p className="text-sm font-bold">Đổi 1 bữa cá hồi</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Cá basa hấp gừng vẫn giữ đạm và omega-3, nhẹ ví hơn khoảng 28.000 đ / khẩu phần.</p></div><div className="rounded-2xl bg-[hsl(41_100%_91%)] p-4"><p className="text-sm font-bold">Mua theo mùa</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Rau luộc trong tuần có thể thay bằng loại đang tươi nhất ở chợ, công thức vẫn đủ chất.</p></div></div></section></div>; }
+function CostsPage({ shopping, prefs, totalCost, plan, spendLog }: { shopping: Aggregate; prefs: Preferences; totalCost: number; plan: DayPlan[]; spendLog: SpendRecord[] }) { const ingredients = Object.entries(shopping).reduce((sum, [name, value]) => sum + priceFor(name, value.qty), 0); const remaining = (prefs.targetBudget || 1200000) - totalCost; const bars = plan.map((day) => Math.round(mealCalories(day).cal * unitsOf(prefs))); const max = Math.max(...bars); const avgDeltaPercent = spendLog.length ? Math.round(spendLog.reduce((sum, record) => sum + (record.estimated > 0 ? (record.actual - record.estimated) / record.estimated : 0), 0) / spendLog.length * 100) : 0; const spendInsight = avgDeltaPercent > 8 ? `Trung bình bạn chi vượt dự toán khoảng ${avgDeltaPercent}%. Thử dùng checklist "Tự Nhập Túi Đồ" ở tab Đi Chợ và bám sát giá từng món khi đứng ở Bách Hóa Xanh.` : avgDeltaPercent < -8 ? `Trung bình bạn chi ít hơn dự toán khoảng ${Math.abs(avgDeltaPercent)}% — có thể hạ nhẹ ngân sách mục tiêu hoặc trích thêm khoản dư vào Quỹ Tích Sản 2036.` : `Mức chi của bạn khá sát dự toán (lệch trung bình ${Math.abs(avgDeltaPercent)}%). Cứ tiếp tục giữ kỷ luật này nhé!`; return <div className="space-y-5"><section className="flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><p className="text-xs font-bold uppercase tracking-[.17em] text-primary">Chi phí</p><h1 className="display-font mt-1 text-4xl font-bold tracking-tight">Tiền đi chợ, nhìn là hiểu.</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Không cần cộng tay. Công thức giá lấy theo lượng nguyên liệu thật trong thực đơn tuần.</p></div><Link href="/shopping" className="tactile inline-flex w-fit items-center gap-2 rounded-full border bg-card px-4 py-2.5 text-xs font-bold" data-testid="link-costs-shopping">Xem danh sách <ArrowUpRight size={14} /></Link></section><div className="paper-card p-5"><h3 className="text-sm font-bold flex items-center gap-2 mb-4"><WalletCards size={17} className="text-primary" /> Ngân sách tuần này</h3><BudgetProgress totalCost={totalCost} targetBudget={prefs.targetBudget || 1200000} /></div><section className="grid gap-4 sm:grid-cols-3"><StatCard label="Dự kiến cả tuần" value={money(totalCost)} accent="primary" /><StatCard label="Nguyên liệu chính" value={money(ingredients)} /><StatCard label={remaining >= 0 ? 'Còn trong ngân sách' : 'Vượt ngân sách'} value={money(Math.abs(remaining))} accent={remaining >= 0 ? 'sage' : 'berry'} /></section><section className="paper-card p-5 md:p-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-muted-foreground">Nhịp chi tiêu</p><h2 className="display-font mt-1 text-2xl font-bold">Mức {budgetLabels[prefs.budget].toLowerCase()}</h2></div><WalletCards size={21} className="text-primary" /></div><div className="mt-6 flex h-44 items-end gap-2 border-b border-l px-2 pb-0 pt-4 sm:gap-4">{bars.map((value, index) => <div key={DAY_NAMES[index]} className="flex h-full flex-1 flex-col items-center justify-end gap-2"><div className="w-full max-w-9 rounded-t-lg bg-[hsl(18_80%_56%/.82)] transition-[height] duration-500" style={{ height: `${Math.max(13, value / max * 100)}%` }} /><span className="text-[10px] font-bold text-muted-foreground">{index === 6 ? 'CN' : `T${index + 2}`}</span></div>)}</div><p className="mt-4 text-xs leading-5 text-muted-foreground">Mỗi ngày gồm sáng, trưa, tối và phần gia vị phân bổ theo tuần. Mức này là ước tính tham khảo — giá chợ có thể thay đổi theo mùa.</p></section><section className="paper-card p-5 md:p-6"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-muted-foreground">Đối chiếu thực tế</p><h2 className="display-font mt-1 text-2xl font-bold">Dự toán so với thực chi</h2></div><WalletCards size={21} className="text-primary" /></div>{spendLog.length === 0 ? <p className="mt-4 rounded-xl border border-dashed p-4 text-center text-sm text-muted-foreground" data-testid="text-spend-history-empty">Chưa có dữ liệu. Sau khi đi chợ, ghi lại số tiền thực chi ở tab Đi Chợ (mục "Đối chiếu chi tiêu thực tế") để so sánh với dự toán mỗi tuần.</p> : <><div className="mt-4 space-y-2">{spendLog.slice(0, 6).map((record) => { const delta = record.actual - record.estimated; const deltaPercent = record.estimated > 0 ? Math.round(delta / record.estimated * 100) : 0; const isOver = deltaPercent > 5; const isUnder = deltaPercent < -5; return <div key={record.weekKey} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-background px-3 py-2.5 text-xs" data-testid={`row-spend-history-${record.weekKey}`}><span className="font-bold text-muted-foreground">Tuần {weekKeyLabel(record.weekKey)}</span><span className="font-semibold">{money(record.estimated)} → {money(record.actual)}</span><span className={`rounded-full px-2.5 py-1 font-bold ${isOver ? 'budget-alert-low' : isUnder ? 'budget-alert-high' : 'budget-alert-balanced'}`}>{deltaPercent > 0 ? '+' : ''}{deltaPercent}%</span></div>; })}</div><p className="mt-4 text-xs leading-5 text-muted-foreground" data-testid="text-spend-insight">{spendInsight}</p></>}</section><section className="paper-card p-5 md:p-6"><h2 className="display-font text-2xl font-bold">Nếu muốn tiết kiệm thêm</h2><div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="rounded-2xl bg-secondary p-4"><p className="text-sm font-bold">Đổi 1 bữa cá hồi</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Cá basa hấp gừng vẫn giữ đạm và omega-3, nhẹ ví hơn khoảng 28.000 đ / khẩu phần.</p></div><div className="rounded-2xl bg-[hsl(41_100%_91%)] p-4"><p className="text-sm font-bold">Mua theo mùa</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Rau luộc trong tuần có thể thay bằng loại đang tươi nhất ở chợ, công thức vẫn đủ chất.</p></div></div></section></div>; }
 
 function KitchenEquityCard({ weeklySaving }: { weeklySaving: number }) {
   const weeklyRate = 0.08 / 52;
