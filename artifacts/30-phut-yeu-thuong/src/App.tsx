@@ -490,7 +490,7 @@ function BudgetProgress({ totalCost, targetBudget, className = "" }: { totalCost
   const colorClass = isOver ? 'bg-destructive' : percent >= 90 ? 'bg-amber-400' : 'bg-primary';
   
   return (
-    <div className={`space-y-3 ${className}`} data-testid="budget-progress">
+      <div className={`space-y-3 ${className}`} data-testid="budget-progress">
       <div className="flex justify-between text-xs">
         <span className="font-bold text-muted-foreground">Đã chi: <span className="text-foreground">{money(totalCost)}</span></span>
         <span className="font-bold text-muted-foreground">Mục tiêu: <span className="text-foreground">{money(targetBudget)}</span></span>
@@ -868,7 +868,7 @@ function LockedWeekBanner({ onUpgrade }: { onUpgrade: () => void }) {
     <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-accent/30 blur-2xl" />
     <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-start gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-foreground text-accent"><LockKeyhole size={20} /></span><div><p className="text-[10px] font-bold uppercase tracking-[.16em] text-primary">Ngày 4–7 đang khóa</p><h3 className="display-font mt-1 text-xl font-bold">🔒 Mở khóa thực đơn trọn tuần & Hỏi AI không giới hạn chỉ 49k/tháng</h3><p className="mt-2 text-xs leading-5 text-muted-foreground">Ăn đủ 7 ngày, nhận công thức đầy đủ và dùng trợ lý AI không giới hạn.</p></div></div>
-      <button onClick={onUpgrade} className="tactile inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-xs font-bold text-primary-foreground shadow-[0_4px_0_hsl(13_72%_43%)]" data-testid="button-upgrade-locked"><Crown size={15} /> Nâng cấp Pro</button>
+      <button onClick={onUpgrade} className="warm-cta tactile inline-flex shrink-0 items-center justify-center gap-2 shadow-[0_4px_0_hsl(18_58%_36%)]" data-testid="button-upgrade-locked"><Crown size={15} /> Nâng cấp Pro</button>
     </div>
   </section>;
 }
@@ -1119,9 +1119,9 @@ function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomIte
   const totalCount = entries.length + customItems.length;
   return <div className="space-y-5 pb-5">
     <section className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
-      <div><p className="text-xs font-bold uppercase tracking-[.17em] text-[hsl(154_25%_32%)]">Đi chợ</p><h1 className="display-font mt-1 text-4xl font-bold tracking-tight">Túi đi chợ tuần này</h1><p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Tươi sống mua nhanh, đồ khô mua đúng chỗ. Chạm vào món nhà mình đã có để trừ khỏi dự toán.</p></div>
+      <div><p className="text-xs font-bold uppercase tracking-[.17em] text-primary">Đi chợ</p><h1 className="display-font mt-1 text-4xl font-bold tracking-tight">Túi đi chợ tuần này</h1><p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Tươi sống mua nhanh, đồ khô mua đúng chỗ. Chạm vào món nhà mình đã có để trừ khỏi dự toán.</p></div>
       <div className="flex flex-wrap gap-2">
-        <button onClick={copyShoppingList} className="tactile inline-flex items-center gap-2 rounded-full bg-[linear-gradient(135deg,#E88C69,#D57A64)] px-5 py-3 text-xs font-bold text-white shadow-[0_8px_18px_rgba(216,122,100,0.22)]" data-testid="button-share-zalo">{copied ? <Check size={15} /> : <Share2 size={15} />}{copied ? 'Đã copy danh sách' : '📱 Gửi Danh Sách Đi Chợ Cho Chồng Qua Zalo'}</button>
+        <button onClick={copyShoppingList} className="warm-cta tactile inline-flex items-center justify-center gap-2 shadow-[0_8px_18px_rgba(217,107,67,0.22)]" data-testid="button-share-zalo">{copied ? <Check size={15} /> : <Share2 size={15} />}{copied ? 'Đã copy danh sách' : '📱 Gửi Danh Sách Đi Chợ Cho Chồng Qua Zalo'}</button>
         <button onClick={() => window.print()} className="tactile inline-flex items-center gap-2 rounded-full border border-[hsl(34_31%_90%)] bg-white px-4 py-2.5 text-xs font-bold shadow-sm" data-testid="button-print-shopping"><Printer size={15} /> In danh sách</button>
       </div>
     </section>
