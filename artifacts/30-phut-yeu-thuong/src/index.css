@@ -160,8 +160,9 @@
 .budget-alert-high { background: rgba(45, 90, 39, .12); color: var(--primary-green); }
 .budget-alert-balanced { background: rgba(45, 90, 39, .08); color: var(--primary-green); }
 .compact-message { padding: 6px 0 8px; color: var(--primary-green); font-size: 13px; font-style: italic; font-weight: 500; line-height: 18px; }
-.shopping-items-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-.shopping-item { min-width: 0; border-color: rgba(43, 45, 66, .08); box-shadow: 0 2px 5px rgba(43, 45, 66, .03); }
+/* Mobile: single column so long ingredient names always have full row width. md+: 2 columns. */
+.shopping-items-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.shopping-item { min-width: 0; border-color: var(--card-border-soft); box-shadow: 0 2px 5px rgba(43, 45, 66, .03); }
 .shopping-item-done { background: rgba(108, 117, 125, .08); opacity: .62; }
 .shopping-quantity { width: 42px; border: 0; border-bottom: 1px solid rgba(43, 45, 66, .14); background: transparent; padding: 1px; text-align: right; color: var(--text-main); font-size: 10px; font-weight: 700; outline: none; }
 .shopping-link-icon { display: inline-flex; height: 25px; width: 25px; flex: 0 0 auto; align-items: center; justify-content: center; border-radius: 7px; background: rgba(45, 90, 39, .1); color: var(--primary-green); }
@@ -250,7 +251,7 @@
   .bottom-nav { left: 50%; right: auto; width: min(calc(100% - 16px), 1000px); height: 65px; padding-bottom: 0; transform: translateX(-50%); }
   .bottom-nav > div { max-width: 1000px; }
   .content-wrap { padding-bottom: 100px; }
-  .shopping-items-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .shopping-items-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 }
 
 @media (min-width: 1024px) {

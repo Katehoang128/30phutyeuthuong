@@ -1529,7 +1529,21 @@ function ShoppingGroupV2({ title, subtitle, items, bought, toggle, updateQuantit
 }
 function ShoppingItemRow({ name, value, done, toggle, updateQuantity, kind }: { name: string; value: { qty: number; unit?: string }; done: boolean; toggle: (name: string) => void; updateQuantity: (name: string, value: string) => void; kind: 'fresh' | 'dry' }) {
   const affiliateUrl = SHOPPING_AFFILIATE_LINKS[name];
-  return <div className={`shopping-item flex min-h-[42px] items-center gap-1.5 rounded-lg border px-2 py-1.5 transition-opacity ${done ? 'shopping-item-done' : 'bg-card'}`}><input type="checkbox" checked={done} onChange={() => toggle(name)} className="h-4 w-4 shrink-0 accent-[hsl(113_40%_45%)]" data-testid={`checkbox-have-${name}`} aria-label={`Nhà đã có ${name}`} /><span className={`min-w-0 flex-1 truncate text-xs font-bold ${done ? 'line-through' : ''}`}>{name}</span><span className="shrink-0 text-[10px] font-bold text-muted-foreground">{displayQuantity(value)}</span><span className="shrink-0 text-[10px] font-bold text-primary">{money(priceFor(name, value.qty))}</span><input type="number" min="0" step={value.unit ? '0.1' : '5'} value={quantityEditorValue(value)} onChange={(event) => updateQuantity(name, event.target.value)} className="shopping-quantity" aria-label={`Số lượng ${name}`} data-testid={`input-quantity-${name}`} />{kind === 'dry' && affiliateUrl && <a href={affiliateUrl} target="_blank" rel="nofollow sponsored noopener" className="shopping-link-icon" aria-label={`Mua ${name} trên Shopee`} data-testid={`link-shopee-${name}`}><ExternalLink size={13} /></a>}</div>;
+  // Left side (checkbox + name) gets flex-1 min-w-0 with no truncate so the ingredient name is always
+  // fully readable; the right side (qty/price/link cluster) is shrink-0 + whitespace-nowrap so those
+  // numbers never get squeezed — this is what was hiding names in the old 2-col mobile grid.
+  return <div className={`shopping-item flex items-center justify-between gap-2 rounded-xl border px-4 py-3 transition-opacity ${done ? 'shopping-item-done' : 'bg-card'}`}>
+    <div className="flex min-w-0 flex-1 items-center gap-2">
+      <input type="checkbox" checked={done} onChange={() => toggle(name)} className="h-4 w-4 shrink-0 accent-[hsl(113_40%_45%)]" data-testid={`checkbox-have-${name}`} aria-label={`Nhà đã có ${name}`} />
+      <span className={`min-w-0 flex-1 text-xs font-bold ${done ? 'line-through' : ''}`}>{name}</span>
+    </div>
+    <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
+      <span className="text-[10px] font-bold text-muted-foreground">{displayQuantity(value)}</span>
+      <input type="number" min="0" step={value.unit ? '0.1' : '5'} value={quantityEditorValue(value)} onChange={(event) => updateQuantity(name, event.target.value)} className="shopping-quantity" aria-label={`Số lượng ${name}`} data-testid={`input-quantity-${name}`} />
+      <span className="text-[10px] font-bold text-primary">{money(priceFor(name, value.qty))}</span>
+      {kind === 'dry' && affiliateUrl && <a href={affiliateUrl} target="_blank" rel="nofollow sponsored noopener" className="shopping-link-icon" aria-label={`Mua ${name} trên Shopee`} data-testid={`link-shopee-${name}`}><ExternalLink size={13} /></a>}
+    </div>
+  </div>;
 }
 
 function CustomBagAiCard({ prefs }: { prefs: Preferences }) {
