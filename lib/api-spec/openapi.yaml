@@ -92,6 +92,28 @@ paths:
           description: Invalid input
         "502":
           description: AI provider error
+  /ai/meal-week:
+    post:
+      operationId: generateMealWeek
+      tags: [ai]
+      summary: Generate 7 ngày mâm cơm 3 món (Thứ 2 - Chủ nhật) in a single AI call
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MealTrayRequest"
+      responses:
+        "200":
+          description: 7-day mâm cơm plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MealWeekResponse"
+        "400":
+          description: Invalid input
+        "502":
+          description: AI provider error
 components:
   schemas:
     HealthStatus:
@@ -364,4 +386,49 @@ components:
         - health_benefits_note
         - dishes
         - tags
+    WeeklyMealTray:
+      type: object
+      properties:
+        day_label:
+          type: string
+          description: "Thứ 2, Thứ 3, ... Chủ nhật"
+        meal_title:
+          type: string
+        total_estimated_cost:
+          type: integer
+          minimum: 0
+        cooking_time_minutes:
+          type: integer
+          minimum: 0
+        health_benefits_note:
+          type: string
+        dishes:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            $ref: "#/components/schemas/MealTrayDish"
+        tags:
+          type: array
+          items:
+            type: string
+      required:
+        - day_label
+        - meal_title
+        - total_estimated_cost
+        - cooking_time_minutes
+        - health_benefits_note
+        - dishes
+        - tags
+    MealWeekResponse:
+      type: object
+      properties:
+        week:
+          type: array
+          minItems: 7
+          maxItems: 7
+          items:
+            $ref: "#/components/schemas/WeeklyMealTray"
+      required:
+        - week
 

@@ -148,3 +148,28 @@ export interface MealTrayResponse {
   tags: string[];
 }
 
+export interface WeeklyMealTray {
+  /** Thứ 2, Thứ 3, ... Chủ nhật */
+  day_label: string;
+  meal_title: string;
+  /** @minimum 0 */
+  total_estimated_cost: number;
+  /** @minimum 0 */
+  cooking_time_minutes: number;
+  health_benefits_note: string;
+  /**
+     * @minItems 3
+     * @maxItems 3
+     */
+  dishes: MealTrayDish[];
+  tags: string[];
+}
+
+export interface MealWeekResponse {
+  /**
+     * @minItems 7
+     * @maxItems 7
+     */
+  week: WeeklyMealTray[];
+}
+

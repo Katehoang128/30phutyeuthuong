@@ -213,10 +213,6 @@
 .bag-suggestion { display: flex; align-items: flex-start; gap: 6px; border-radius: 10px; background: rgba(232, 106, 51, .09); padding: 8px 10px; color: #8B401F; font-size: 11px; font-weight: 600; line-height: 15px; }
 .bag-estimate-card { border-radius: 12px; border: 1px solid rgba(45, 90, 39, .16); background: #E9F5EA; padding: 11px; }
 .bag-estimate-title { color: #2D5A27; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
-.bag-day-row { display: grid; grid-template-columns: 56px 1fr 1fr; align-items: center; gap: 6px; border-radius: 12px; border: 1px solid var(--card-border-soft); background: #fff; padding: 8px 9px; }
-.bag-day-name { color: #2D5A27; font-size: 11px; font-weight: 700; }
-.bag-day-dish { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #2B2D42; font-size: 11px; font-weight: 600; }
-.bag-day-dish em { color: #6C757D; font-style: normal; }
 .bhx-cart-card { border-color: rgba(0, 136, 72, .16); }
 .bhx-cart-row { display: flex; min-width: 0; align-items: center; gap: 8px; border-radius: 10px; padding: 5px 4px; }
 .bhx-cart-row-done { opacity: .55; }

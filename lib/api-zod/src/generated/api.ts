@@ -175,3 +175,73 @@ export const GenerateMealTrayResponse = zod.object({
 })
 
 
+/**
+ * @summary Generate 7 ngày mâm cơm 3 món (Thứ 2 - Chủ nhật) in a single AI call
+ */
+export const generateMealWeekBodyFamilyProfileAdultsMin = 0;
+
+export const generateMealWeekBodyFamilyProfileElderlyMin = 0;
+
+export const generateMealWeekBodyFamilyProfileKidsMin = 0;
+
+export const generateMealWeekBodyFamilyProfileBudgetPerMealMin = 0;
+
+export const generateMealWeekBodySafetyKidsMin = 0;
+
+
+
+export const GenerateMealWeekBody = zod.object({
+  "familyProfile": zod.object({
+  "adults": zod.number().int().min(generateMealWeekBodyFamilyProfileAdultsMin),
+  "elderly": zod.number().int().min(generateMealWeekBodyFamilyProfileElderlyMin),
+  "kids": zod.number().int().min(generateMealWeekBodyFamilyProfileKidsMin),
+  "budgetPerMeal": zod.number().int().min(generateMealWeekBodyFamilyProfileBudgetPerMealMin).optional().describe('Ngân sách ước tính cho mâm cơm này, tính bằng VNĐ (tùy chọn)')
+}),
+  "safety": zod.object({
+  "kids": zod.number().int().min(generateMealWeekBodySafetyKidsMin),
+  "allergies": zod.array(zod.string()),
+  "allergyOther": zod.string()
+}),
+  "bagIngredients": zod.array(zod.object({
+  "name": zod.string(),
+  "amount": zod.string()
+}).describe('Một nguyên liệu người dùng tự nhập ở chế độ Tự Nhập Túi Đồ / Dọn Tủ')).optional(),
+  "dateISO": zod.string().optional().describe('Ngày dương lịch hiện tại (YYYY-MM-DD) để tự nhận biết Mùng 1/Rằm âm lịch; mặc định lấy giờ máy chủ nếu bỏ trống')
+})
+
+export const generateMealWeekResponseWeekItemTotalEstimatedCostMin = 0;
+
+export const generateMealWeekResponseWeekItemCookingTimeMinutesMin = 0;
+
+export const generateMealWeekResponseWeekItemDishesItemIngredientsItemCostMin = 0;
+
+export const generateMealWeekResponseWeekItemDishesMin = 3;
+export const generateMealWeekResponseWeekItemDishesMax = 3;
+
+export const generateMealWeekResponseWeekMin = 7;
+export const generateMealWeekResponseWeekMax = 7;
+
+
+
+export const GenerateMealWeekResponse = zod.object({
+  "week": zod.array(zod.object({
+  "day_label": zod.string().describe('Thứ 2, Thứ 3, ... Chủ nhật'),
+  "meal_title": zod.string(),
+  "total_estimated_cost": zod.number().int().min(generateMealWeekResponseWeekItemTotalEstimatedCostMin),
+  "cooking_time_minutes": zod.number().int().min(generateMealWeekResponseWeekItemCookingTimeMinutesMin),
+  "health_benefits_note": zod.string(),
+  "dishes": zod.array(zod.object({
+  "category": zod.enum(['Món Đạm', 'Món Rau', 'Món Canh']),
+  "name": zod.string(),
+  "portion_hand_rule": zod.string(),
+  "ingredients": zod.array(zod.object({
+  "item": zod.string(),
+  "amount": zod.string(),
+  "cost": zod.number().int().min(generateMealWeekResponseWeekItemDishesItemIngredientsItemCostMin)
+}))
+})).min(generateMealWeekResponseWeekItemDishesMin).max(generateMealWeekResponseWeekItemDishesMax),
+  "tags": zod.array(zod.string())
+})).min(generateMealWeekResponseWeekMin).max(generateMealWeekResponseWeekMax)
+})
+
+

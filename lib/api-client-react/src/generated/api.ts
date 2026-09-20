@@ -25,6 +25,7 @@ import type {
   HealthStatus,
   MealTrayRequest,
   MealTrayResponse,
+  MealWeekResponse,
   RecipeLookupRequest,
   RecipeLookupResponse
 } from './api.schemas';
@@ -396,5 +397,93 @@ export const useGenerateMealTray = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getGenerateMealTrayMutationOptions(options));
+    }
+
+export const getGenerateMealWeekUrl = () => {
+
+
+
+
+  return `/api/ai/meal-week`
+}
+
+/**
+ * @summary Generate 7 ngày mâm cơm 3 món (Thứ 2 - Chủ nhật) in a single AI call
+ */
+export const generateMealWeek = async (mealTrayRequest: MealTrayRequest, options?: Parameters<typeof customFetch>[1]): Promise<MealWeekResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<MealWeekResponse>(getGenerateMealWeekUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(mealTrayRequest)
+  }
+);}
+
+
+
+
+
+export const getGenerateMealWeekMutationKey = () => ['generateMealWeek'] as const;
+
+export const getGenerateMealWeekMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateMealWeek>>, TError,GenerateMealWeekMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof generateMealWeek>>, TError,GenerateMealWeekMutationVariables, TContext> => {
+
+const mutationKey = getGenerateMealWeekMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof generateMealWeek>>, GenerateMealWeekMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  generateMealWeek(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GenerateMealWeekMutationResult = NonNullable<Awaited<ReturnType<typeof generateMealWeek>>>
+    export type GenerateMealWeekMutationBody = BodyType<MealTrayRequest>
+    export type GenerateMealWeekMutationError = ErrorType<void>
+    export type GenerateMealWeekMutationVariables = {data: BodyType<MealTrayRequest>}
+
+    /**
+ * @summary Generate 7 ngày mâm cơm 3 món (Thứ 2 - Chủ nhật) in a single AI call
+ */
+export const useGenerateMealWeek = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateMealWeek>>, TError,GenerateMealWeekMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof generateMealWeek>>,
+        TError,
+        GenerateMealWeekMutationVariables,
+        TContext
+      > => {
+      return useMutation(getGenerateMealWeekMutationOptions(options));
     }
 

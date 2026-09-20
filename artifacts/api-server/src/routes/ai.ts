@@ -6,6 +6,8 @@ import {
   LookupRecipeResponse,
   GenerateMealTrayBody,
   GenerateMealTrayResponse,
+  GenerateMealWeekBody,
+  GenerateMealWeekResponse,
 } from "@workspace/api-zod";
 import { isLunarFirstOrFullMoonDay } from "../lib/lunar";
 
@@ -173,6 +175,44 @@ function lunarNote(dateISO?: string) {
     : "";
 }
 
+const WEEKDAY_LABELS = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"];
+
+// Checks the 7 real calendar days of the upcoming (or current, if today is Monday) Thứ 2 -> Chủ nhật
+// week so the weekly generator can flag exactly which day(s) must be a vegetarian tray.
+function weeklyLunarNote(dateISO?: string) {
+  const today = dateISO ? new Date(`${dateISO}T00:00:00Z`) : new Date();
+  const dow = today.getUTCDay(); // 0=Sun..6=Sat
+  const daysUntilMonday = dow === 1 ? 0 : (8 - dow) % 7;
+  const monday = new Date(today);
+  monday.setUTCDate(monday.getUTCDate() + daysUntilMonday);
+  const specialDays: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setUTCDate(monday.getUTCDate() + i);
+    const { isSpecial, label } = isLunarFirstOrFullMoonDay(d);
+    if (isSpecial) specialDays.push(`${WEEKDAY_LABELS[i]} (${label})`);
+  }
+  return specialDays.length
+    ? `\n\nLƯU Ý ĐẶC BIỆT CHO TUẦN NÀY: Các ngày sau rơi vào Mùng 1 hoặc Rằm âm lịch, BẮT BUỘC mâm cơm của đúng những ngày đó phải là "Mâm Cơm Chay Thanh Tịnh Đủ Chất" (không thịt/cá/hải sản/trứng): ${specialDays.join(", ")}.`
+    : "";
+}
+
+// Shared persona + rule sections (1-3 of the spec) reused by both the single-tray and the
+// 7-day weekly generator — only the intro line and the output-format section differ.
+function mealTrayRulesText() {
+  return `1. TIÊU CHUẨN DINH DƯỠNG & SỨC KHỎE (BẮT BUỘC TUÂN THỦ):
+- Tiêu chuẩn WHO: Kiểm soát muối (<5g/ngày), giảm đường tinh luyện, ưu tiên chế biến thanh nhẹ (hấp, luộc, canh thanh, áp chảo ít dầu).
+- Quy tắc Bàn tay: 1 Lòng bàn tay Đạm (~120-150g/người), 2 Cả bàn tay Chất xơ/Rau củ (~250-300g/người), 1 Nắm tay Tinh bột chậm.
+- Chăm sóc U40 & Nội tiết tố: Ưu tiên nguyên liệu giàu Phytoestrogen và Omega-3 (đậu hũ, nấm, hạt mè, cá, bơ) giúp chống lão hóa và nhẹ bụng.
+- Đảm bảo An toàn Dị ứng: KHÔNG ĐƯỢC chứa bất kỳ nguyên liệu nào nằm trong danh sách dị ứng/kiêng khem của người dùng.
+
+2. KHO ẨM THỰC ĐA DẠNG & PHONG PHÚ:
+Hãy linh hoạt biến tấu mâm cơm theo các phong cách: Truyền Thống 3 Miền Việt Nam (canh sấu thịt bằm, cá bống kho tiêu, canh chua bông điền điển, kho quẹt rau luộc...), Ẩm Thực Lễ/Tết/Mùa Vụ, Món Á Đông Hàn Quốc & Nhật Bản (canh kim chi đậu hũ, thịt xào bulgogi, canh rong biển miso, cá hồi sốt teriyaki...), Món Âu-Mỹ Tinh Gọn (mì Ý sốt cà thịt bằm, salad ức gà sốt mè, súp kem bí đỏ, bò lúc lắc ớt chuông), Món Trend TikTok phiên bản Healthy (ít dầu mỡ, chuẩn dinh dưỡng gia đình).
+
+3. TỰ ĐỘNG HÓA THEO BỐI CẢNH:
+Nếu gia đình có trẻ nhỏ, ưu tiên món mềm, dễ tiêu hóa, cắt thái nhỏ gọn nhưng vẫn kích thích thị giác cho bé.`;
+}
+
 router.post("/ai/meal-tray", async (req, res): Promise<void> => {
   const parsed = GenerateMealTrayBody.safeParse(req.body);
   if (!parsed.success) {
@@ -192,17 +232,7 @@ router.post("/ai/meal-tray", async (req, res): Promise<void> => {
 NHIỆM VỤ CỐT LÕI:
 Dựa trên thông tin cài đặt của gia đình và ngân sách người dùng cung cấp, hãy tạo ra MÂM CƠM 3 MÓN HOÀN CHỈNH (1 Món Đạm - 1 Món Rau/Xào - 1 Món Canh) với tiêu chí: Nấu nhanh ≤ 30 phút, Chuẩn dinh dưỡng y khoa, Đa dạng hương vị và Tối ưu chi phí.
 
-1. TIÊU CHUẨN DINH DƯỠNG & SỨC KHỎE (BẮT BUỘC TUÂN THỦ):
-- Tiêu chuẩn WHO: Kiểm soát muối (<5g/ngày), giảm đường tinh luyện, ưu tiên chế biến thanh nhẹ (hấp, luộc, canh thanh, áp chảo ít dầu).
-- Quy tắc Bàn tay: 1 Lòng bàn tay Đạm (~120-150g/người), 2 Cả bàn tay Chất xơ/Rau củ (~250-300g/người), 1 Nắm tay Tinh bột chậm.
-- Chăm sóc U40 & Nội tiết tố: Ưu tiên nguyên liệu giàu Phytoestrogen và Omega-3 (đậu hũ, nấm, hạt mè, cá, bơ) giúp chống lão hóa và nhẹ bụng.
-- Đảm bảo An toàn Dị ứng: KHÔNG ĐƯỢC chứa bất kỳ nguyên liệu nào nằm trong danh sách dị ứng/kiêng khem của người dùng.
-
-2. KHO ẨM THỰC ĐA DẠNG & PHONG PHÚ:
-Hãy linh hoạt biến tấu mâm cơm theo các phong cách: Truyền Thống 3 Miền Việt Nam (canh sấu thịt bằm, cá bống kho tiêu, canh chua bông điền điển, kho quẹt rau luộc...), Ẩm Thực Lễ/Tết/Mùa Vụ, Món Á Đông Hàn Quốc & Nhật Bản (canh kim chi đậu hũ, thịt xào bulgogi, canh rong biển miso, cá hồi sốt teriyaki...), Món Âu-Mỹ Tinh Gọn (mì Ý sốt cà thịt bằm, salad ức gà sốt mè, súp kem bí đỏ, bò lúc lắc ớt chuông), Món Trend TikTok phiên bản Healthy (ít dầu mỡ, chuẩn dinh dưỡng gia đình).
-
-3. TỰ ĐỘNG HÓA THEO BỐI CẢNH:
-Nếu gia đình có trẻ nhỏ, ưu tiên món mềm, dễ tiêu hóa, cắt thái nhỏ gọn nhưng vẫn kích thích thị giác cho bé.
+${mealTrayRulesText()}
 
 ${familyProfileNote(familyProfile)}${bagIngredientsNote(bagIngredients)}${lunarNote(dateISO)}
 
@@ -229,6 +259,57 @@ total_estimated_cost phải bằng đúng tổng của mọi "cost" trong ingred
   } catch (error) {
     req.log.error({ err: error }, "Meal tray generation failed");
     res.status(502).json({ error: "Mình chưa lên được mâm cơm lúc này. Bạn thử lại sau ít giây nhé." });
+  }
+});
+
+// Powers "⚡ AI Ghép Mâm Cơm Tuần Mới" (chế độ Tự Nhập Túi Đồ / Tủ Lạnh trên tab Đi Chợ): one Gemini
+// call returns all 7 ngày thay vì gọi 7 lần riêng lẻ, vừa nhanh vừa không đốt hết lượt AI miễn phí.
+router.post("/ai/meal-week", async (req, res): Promise<void> => {
+  const parsed = GenerateMealWeekBody.safeParse(req.body);
+  if (!parsed.success) {
+    req.log.warn({ errors: parsed.error.issues.length }, "Invalid meal week request");
+    res.status(400).json({ error: "Thông tin gia đình chưa hợp lệ." });
+    return;
+  }
+
+  const { familyProfile, safety, bagIngredients, dateISO } = parsed.data;
+  try {
+    const result = await generateJson([
+      {
+        role: "user",
+        parts: [{
+          text: `Bạn là "Đầu Bếp Vén Khéo & Chuyên Gia Dinh Dưỡng AI" của ứng dụng "30 Phút Yêu Thương".
+
+NHIỆM VỤ CỐT LÕI:
+Dựa trên thông tin cài đặt của gia đình, hãy tạo ra LỊCH 7 MÂM CƠM 3 MÓN HOÀN CHỈNH cho 7 ngày liên tiếp từ Thứ 2 đến Chủ nhật (mỗi mâm gồm 1 Món Đạm - 1 Món Rau/Xào - 1 Món Canh), tiêu chí cho từng mâm: Nấu nhanh ≤ 30 phút, Chuẩn dinh dưỡng y khoa, Đa dạng hương vị giữa các ngày và Tối ưu chi phí.
+
+${mealTrayRulesText()}
+
+${familyProfileNote(familyProfile)}${bagIngredientsNote(bagIngredients)}${weeklyLunarNote(dateISO)}
+
+${safetyInstructions(safety)}
+
+YÊU CẦU RIÊNG CHO CẢ TUẦN:
+- Tạo đúng 7 mâm cơm theo đúng thứ tự Thứ 2, Thứ 3, Thứ 4, Thứ 5, Thứ 6, Thứ 7, Chủ nhật.
+- Đa dạng hoá món Đạm: KHÔNG dùng cùng 1 loại đạm chính (thịt heo/gà/bò/cá/tôm/đậu hũ...) ở 2 ngày liên tiếp.
+- Nếu có nguyên liệu túi đồ ở trên, hãy rải và tận dụng toàn bộ số lượng đã cho trải đều 7 ngày, không vượt quá khối lượng thực có, ưu tiên dùng hết trước khi thêm nguyên liệu mới.
+- Ngày nào được ghi chú Mùng 1/Rằm ở trên thì mâm cơm ngày đó bắt buộc là mâm chay.
+
+CẤU TRÚC ĐẦU RA (OUTPUT FORMAT - BẮT BUỘC JSON CHUẨN, không thêm lời dẫn, không markdown):
+{
+  "week": [
+    {"day_label": "Thứ 2", "meal_title": "Tên mâm cơm truyền cảm hứng", "total_estimated_cost": 55000, "cooking_time_minutes": 25, "health_benefits_note": "1 câu giải thích lợi ích dinh dưỡng", "dishes": [{"category": "Món Đạm", "name": "string", "portion_hand_rule": "1 lòng bàn tay (~150g)", "ingredients": [{"item": "string", "amount": "150g", "cost": 25000}]}, {"category": "Món Rau", "name": "string", "portion_hand_rule": "2 cả bàn tay (~250g)", "ingredients": [{"item": "string", "amount": "250g", "cost": 10000}]}, {"category": "Món Canh", "name": "string", "portion_hand_rule": "1 bát canh thanh", "ingredients": [{"item": "string", "amount": "100g", "cost": 8000}]}], "tags": ["🖐️ Chuẩn Bàn Tay"]},
+    ... đủ 7 phần tử theo đúng thứ tự Thứ 2 -> Chủ nhật ...
+  ]
+}
+Mỗi phần tử của "week" phải có đúng 3 dishes theo đúng thứ tự Món Đạm, Món Rau, Món Canh. total_estimated_cost của mỗi ngày phải bằng đúng tổng "cost" trong ingredients ngày đó (VNĐ nguyên, không thập phân). tags mỗi ngày gồm 2-4 nhãn ngắn gọn kèm 1 emoji.`,
+        }],
+      },
+    ], req);
+    res.json(GenerateMealWeekResponse.parse(result));
+  } catch (error) {
+    req.log.error({ err: error }, "Meal week generation failed");
+    res.status(502).json({ error: "Mình chưa lên được thực đơn tuần này. Bạn thử lại sau ít giây nhé." });
   }
 });
 

@@ -673,20 +673,10 @@ function estimateBagWeek(items: BagItem[], prefs: Preferences) {
   return { groups, perDayNeed, totalCost, overallDays, shortages, surplusDays, surplusCost };
 }
 
-type BagDaySpread = { day: string; dam?: BagItem; damMethod: string; rau?: BagItem };
-const BAG_COOK_STYLES = ['Hấp/Luộc', 'Kho/Rim', 'Xào/Áp chảo'];
-// Auto-Spread Meals: rolls the entered bag across Thứ 2 -> Chủ nhật. Cycling items with `index % length`
-// guarantees no two consecutive days land on the same đạm item (or cách chế biến) whenever ≥2 are entered.
-function spreadBagAcrossWeek(items: BagItem[]): BagDaySpread[] {
-  const damItems = items.filter((item) => item.group === 'dam');
-  const rauItems = items.filter((item) => item.group === 'rau');
-  return DAY_NAMES.map((day, index) => ({
-    day,
-    dam: damItems.length ? damItems[index % damItems.length] : undefined,
-    damMethod: BAG_COOK_STYLES[index % BAG_COOK_STYLES.length],
-    rau: rauItems.length ? rauItems[index % rauItems.length] : undefined,
-  }));
-}
+// Real AI meal-pairing result shapes, mirrored from the api-server /ai/meal-week response.
+type MealTrayIngredientResult = { item: string; amount: string; cost: number };
+type MealTrayDishResult = { category: string; name: string; portion_hand_rule: string; ingredients: MealTrayIngredientResult[] };
+type WeeklyMealTrayResult = { day_label: string; meal_title: string; total_estimated_cost: number; cooking_time_minutes: number; health_benefits_note: string; dishes: MealTrayDishResult[]; tags: string[] };
 
 function BudgetProgress({ totalCost, targetBudget, className = "" }: { totalCost: number, targetBudget: number, className?: string }) {
   const percent = targetBudget > 0 ? (totalCost / targetBudget) * 100 : 0;
@@ -973,7 +963,7 @@ function Shell() {
   }, [plan, units, prefs, bought]);
 
   let page;
-  if (location === '/shopping') page = <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} setQuantityOverrides={setQuantityOverrides} targetBudget={prefs.targetBudget || 1200000} prefs={prefs} spendLog={spendLog} onRecordSpend={recordActualSpend} />;
+  if (location === '/shopping') page = <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} setQuantityOverrides={setQuantityOverrides} targetBudget={prefs.targetBudget || 1200000} prefs={prefs} spendLog={spendLog} onRecordSpend={recordActualSpend} isPro={isPro} onUpgrade={() => openUpgrade('meal_pairing_ai')} />;
   else if (location === '/costs') page = <div className="space-y-5"><CostsPage shopping={shopping} prefs={prefs} totalCost={totalCost} plan={accessiblePlan} spendLog={spendLog} /><KitchenEquityCard weeklySaving={Math.max(0, (prefs.targetBudget || 1200000) - totalCost)} /></div>;
   else if (location === '/ask-ai') page = <AskAiPageV2 prefs={prefs} isPro={isPro} onUpgrade={() => openUpgrade('ai_limit')} />;
   else page = <HomePage plan={plan} isPro={isPro} onUpgrade={() => openUpgrade('locked_week')} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} totalCost={totalCost} forceBudget={forceBudget} budgetNotice={budgetNotice} swapNotice={swapNotice} onSwapDish={swapDish} spendLog={spendLog} />;
@@ -1457,7 +1447,7 @@ function ShoppingPage({ shopping, bought, setBought, customItems, setCustomItems
 }
 function ShoppingGroup({ category, items, bought, toggle }: { category: string; items: [string, { qty: number; unit?: string }][]; bought: Set<string>; toggle: (name: string) => void }) { return <section className="paper-card overflow-hidden"><div className="flex items-center justify-between border-b bg-muted/45 px-4 py-3"><h2 className="text-sm font-bold">{category}</h2><span className="rounded-full bg-card px-2.5 py-1 text-[10px] font-bold text-muted-foreground">{items.length} món</span></div><div className="divide-y">{items.map(([name, value]) => { const done = bought.has(name); return <div key={name} className={`flex items-center justify-between gap-3 px-4 py-3.5 transition-opacity ${done ? 'opacity-45' : ''}`}><button onClick={() => toggle(name)} className="flex min-w-0 items-center gap-3 text-left" data-testid={`button-bought-${name}`}><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${done ? 'border-[hsl(113_40%_45%)] bg-[hsl(113_40%_45%)] text-white' : 'border-[hsl(37_43%_74%)] bg-card'}`}>{done && <Check size={14} strokeWidth={3} />}</span><span className={`text-sm font-semibold ${done ? 'line-through' : ''}`}>{name}</span></button><span className="shrink-0 text-xs font-bold text-muted-foreground">{displayQuantity(value)}</span></div>; })}</div></section>; }
 
-function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomItems, totalCost, setQuantityOverrides, targetBudget, prefs, spendLog, onRecordSpend }: { shopping: Aggregate; bought: Set<string>; setBought: (value: Set<string>) => void; customItems: { name: string; bought: boolean }[]; setCustomItems: (value: { name: string; bought: boolean }[]) => void; totalCost: number; setQuantityOverrides: (value: Record<string, number> | ((current: Record<string, number>) => Record<string, number>)) => void; targetBudget: number; prefs: Preferences; spendLog: SpendRecord[]; onRecordSpend: (actual: number) => void }) {
+function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomItems, totalCost, setQuantityOverrides, targetBudget, prefs, spendLog, onRecordSpend, isPro, onUpgrade }: { shopping: Aggregate; bought: Set<string>; setBought: (value: Set<string>) => void; customItems: { name: string; bought: boolean }[]; setCustomItems: (value: { name: string; bought: boolean }[]) => void; totalCost: number; setQuantityOverrides: (value: Record<string, number> | ((current: Record<string, number>) => Record<string, number>)) => void; targetBudget: number; prefs: Preferences; spendLog: SpendRecord[]; onRecordSpend: (actual: number) => void; isPro: boolean; onUpgrade: () => void }) {
   const [mode, setMode] = useState<'ai' | 'custom'>('ai');
   const [newItem, setNewItem] = useState('');
   const [copied, setCopied] = useState(false);
@@ -1534,7 +1524,7 @@ function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomIte
       <ActualSpendTracker estimated={totalCost} spendLog={spendLog} onRecordSpend={onRecordSpend} />
       <ShoppingGroupV2 title="Thực phẩm tươi sống" subtitle="Thịt, cá, tôm, rau và củ" items={freshItems} bought={bought} toggle={toggle} updateQuantity={updateQuantity} kind="fresh" />
       <ShoppingGroupV2 title="Đồ khô & gia vị" subtitle="Gạo, bún, tôm khô và các món để dành" items={dryItems} bought={bought} toggle={toggle} updateQuantity={updateQuantity} kind="dry" />
-    </> : <CustomBagAiCard prefs={prefs} />}
+    </> : <CustomBagAiCard prefs={prefs} isPro={isPro} onUpgrade={onUpgrade} />}
     <section className="paper-card border-[hsl(113_40%_45%/.3)] bg-secondary/45 p-4 md:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-[hsl(113_33%_30%)]">Mua tươi sống tiện hơn</p><p className="mt-1 text-sm font-semibold">Đặt một lần, giao đủ rau củ và thịt cá cho cả tuần.</p></div><a href={BACH_HOA_XANH_AFFILIATE_URL} target="_blank" rel="nofollow sponsored noopener" className="tactile inline-flex items-center justify-center gap-2 rounded-xl bg-[hsl(113_40%_45%)] px-4 py-3 text-xs font-bold text-white shadow-[0_4px_0_hsl(113_40%_35%)]" data-testid="link-bach-hoa-xanh"><ShoppingBasket size={16} /> 🛒 Đặt giao tận nhà qua Bách Hóa Xanh <ExternalLink size={13} /></a></div>
     </section>
@@ -1611,17 +1601,22 @@ function ShoppingItemRow({ name, value, done, toggle, updateQuantity, kind }: { 
   </div>;
 }
 
-function CustomBagAiCard({ prefs }: { prefs: Preferences }) {
+function CustomBagAiCard({ prefs, isPro, onUpgrade }: { prefs: Preferences; isPro: boolean; onUpgrade: () => void }) {
   const [open, setOpen] = useState(true);
   const [bagItems, setBagItems] = useState<BagItem[]>([]);
   const [bagText, setBagText] = useState('');
-  const [weekSpread, setWeekSpread] = useState<BagDaySpread[] | null>(null);
+  const [aiWeek, setAiWeek] = useState<WeeklyMealTrayResult[] | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [aiUsage, setAiUsage] = useState<AiUsage>(readAiUsage);
   const headcount = prefs.adults + prefs.elderly + prefs.kids;
+  const aiRemaining = isPro ? null : Math.max(0, FREE_AI_LIMIT - aiUsage.count);
+  const hasAiAccess = isPro || aiUsage.count < FREE_AI_LIMIT;
 
   const addItem = (name: string, qty = 300, unit: 'g' | 'kg' = 'g') => {
     const { group, pricePerKg } = classifyBagIngredient(name);
     setBagItems((current) => [...current, { id: `bag-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name, qty, unit, pricePerKg, group }]);
-    setWeekSpread(null);
+    setAiWeek(null);
   };
   const addFromText = () => {
     const parsed = parseBagText(bagText);
@@ -1631,18 +1626,59 @@ function CustomBagAiCard({ prefs }: { prefs: Preferences }) {
   };
   const updateItem = (id: string, patch: Partial<BagItem>) => {
     setBagItems((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
-    setWeekSpread(null);
+    setAiWeek(null);
   };
   const removeItem = (id: string) => {
     setBagItems((current) => current.filter((item) => item.id !== id));
-    setWeekSpread(null);
+    setAiWeek(null);
   };
   const estimate = useMemo(() => estimateBagWeek(bagItems, prefs), [bagItems, prefs]);
-  const runAiSpread = () => { if (bagItems.length) setWeekSpread(spreadBagAcrossWeek(bagItems)); };
+
+  // Real AI meal-pairing: one Gemini call returns all 7 ngày (Thứ 2 -> Chủ nhật), so this shares the
+  // same 3-lượt/tháng miễn phí quota as the other AI features (Bếp AI tab) rather than a local heuristic.
+  const runAiSpread = async () => {
+    if (!bagItems.length || aiLoading) return;
+    if (!hasAiAccess) {
+      trackEvent('ai_limit_reached', { mode: 'meal_week', limit: FREE_AI_LIMIT });
+      onUpgrade();
+      return;
+    }
+    setAiLoading(true);
+    setAiError('');
+    setAiWeek(null);
+    try {
+      const response = await fetch(apiUrl('/api/ai/meal-week'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          familyProfile: { adults: prefs.adults, elderly: prefs.elderly, kids: prefs.kids, budgetPerMeal: Math.round((prefs.targetBudget || 1200000) / 7) },
+          safety: { kids: prefs.kids, allergies: prefs.allergies, allergyOther: prefs.allergyOther },
+          bagIngredients: bagItems.map((item) => ({ name: item.name, amount: item.unit === 'kg' ? `${item.qty}kg` : `${item.qty}g` })),
+          dateISO: new Date().toISOString().slice(0, 10),
+        }),
+      });
+      const data = await response.json() as { week?: WeeklyMealTrayResult[]; error?: string };
+      if (!response.ok || !data.week) throw new Error(data.error || 'AI chưa ghép được mâm cơm lúc này.');
+      setAiWeek(data.week);
+      if (!isPro) {
+        const next = { month: currentMonth(), count: aiUsage.count + 1 };
+        window.localStorage.setItem(AI_USAGE_STORAGE_KEY, JSON.stringify(next));
+        setAiUsage(next);
+      }
+      trackEvent('ai_request_succeeded', { mode: 'meal_week', membership: isPro ? 'pro' : 'free' });
+    } catch (caught) {
+      setAiError(caught instanceof Error ? caught.message : 'AI chưa ghép được mâm cơm lúc này. Bạn thử lại sau ít giây nhé.');
+      trackEvent('ai_request_failed', { mode: 'meal_week', membership: isPro ? 'pro' : 'free' });
+    } finally {
+      setAiLoading(false);
+    }
+  };
+  const weekAvgCostPerMeal = aiWeek ? aiWeek.reduce((sum, day) => sum + day.total_estimated_cost, 0) / aiWeek.length : 0;
+  const weekFundSaving = aiWeek ? Math.max(0, (prefs.targetBudget || 1200000) - aiWeek.reduce((sum, day) => sum + day.total_estimated_cost, 0)) : 0;
 
   return <section className="paper-card overflow-hidden !mb-2 bag-ai-card">
     <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center justify-between gap-3 text-left" aria-expanded={open} data-testid="button-toggle-bag-ai">
-      <div className="min-w-0"><h2 className="truncate text-sm font-bold">🛒 Tự Nhập Túi Đồ Đã Mua / Sẽ Mua</h2><p className="mt-0.5 truncate text-[10px] text-muted-foreground">Nhập tự do hoặc chọn nhanh, để AI dự toán & rải món cho cả tuần</p></div>
+      <div className="min-w-0"><h2 className="truncate text-sm font-bold">🛒 Tự Nhập Túi Đồ Đã Mua / Sẽ Mua</h2><p className="mt-0.5 truncate text-[10px] text-muted-foreground">Nhập tự do hoặc chọn nhanh, để AI dự toán & ghép mâm cơm cho cả tuần</p></div>
       <ChevronDown size={17} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
     </button>
     {open && <div className="mt-3 space-y-3">
@@ -1671,17 +1707,24 @@ function CustomBagAiCard({ prefs }: { prefs: Preferences }) {
         </div>
         {estimate.shortages.length > 0 ? <div className="mt-2 space-y-1.5">{estimate.shortages.map((shortage) => <div key={shortage.group} className="budget-alert-low rounded-xl px-3 py-2 text-[11px] font-bold leading-5" data-testid={`text-bag-shortage-${shortage.group}`}>⚠️ Thiếu {BAG_GROUP_LABELS[shortage.group]} cho khoảng {shortage.missingDays.toFixed(1)} ngày cuối tuần. Gợi ý mua thêm ~{money(shortage.missingCost)} {shortage.topup} để đủ 7 ngày.</div>)}</div> : <div className="budget-alert-high mt-2 rounded-xl px-3 py-2 text-[11px] font-bold leading-5" data-testid="text-bag-surplus">{estimate.surplusDays > 0.4 ? `✅ Túi đồ đủ ăn trong ${Math.floor(estimate.overallDays)} ngày, dư ra ${money(estimate.surplusCost)} có thể trích vào Quỹ Tích Sản 2036.` : '✅ Túi đồ vừa khớp trọn 7 ngày, không dư không thiếu.'}</div>}
       </div>}
-      {bagItems.length > 0 && <button onClick={runAiSpread} className="bag-ai-button tactile flex w-full items-center justify-center gap-1.5" data-testid="button-ai-spread-week"><Sparkles size={14} /> ⚡ AI Ghép Mâm Cơm Tuần Mới</button>}
-      {weekSpread && <div className="space-y-1.5 pt-1">{weekSpread.map((day) => <div key={day.day} className="bag-day-row">
-        <span className="bag-day-name">{day.day}</span>
-        <span className="bag-day-dish">{day.dam ? <>🍖 {day.dam.name} <em>({day.damMethod})</em></> : <span className="text-muted-foreground">Chưa có món đạm</span>}</span>
-        <span className="bag-day-dish">{day.rau ? <>🥬 {day.rau.name}</> : <span className="text-muted-foreground">Chưa có rau</span>}</span>
+      {bagItems.length > 0 && <div className="flex items-center justify-between gap-2 text-[10px] font-bold text-muted-foreground">
+        <span>{isPro ? '👑 AI không giới hạn (Pro)' : `Còn ${aiRemaining}/${FREE_AI_LIMIT} lượt AI miễn phí tháng này`}</span>
+      </div>}
+      {bagItems.length > 0 && <button onClick={runAiSpread} disabled={aiLoading} className="bag-ai-button tactile flex w-full items-center justify-center gap-1.5 disabled:opacity-60" data-testid="button-ai-spread-week">{aiLoading ? <LoaderCircle size={14} className="animate-spin" /> : <Sparkles size={14} />} {aiLoading ? 'AI đang ghép mâm cơm...' : '⚡ AI Ghép Mâm Cơm Tuần Mới'}</button>}
+      {aiLoading && <AiLoadingCard text="Gemini đang cân đối 7 mâm cơm 3 món theo đúng khẩu phần và túi đồ của nhà mình..." />}
+      {aiError && <div className="budget-alert-low rounded-xl px-3 py-2.5 text-xs font-bold leading-5" data-testid="text-bag-ai-error">⚠️ {aiError}</div>}
+      {aiWeek && <div className="space-y-2 pt-1">{aiWeek.map((day) => <div key={day.day_label} className="bag-meal-card" data-testid={`card-ai-week-${day.day_label}`}>
+        <div className="flex items-center justify-between gap-2"><span className="bag-meal-title">{day.day_label}</span><span className="bag-meal-cost">{money(day.total_estimated_cost)}</span></div>
+        <p className="mt-1 text-xs font-bold leading-5">{day.meal_title}</p>
+        <div className="mt-1.5 space-y-1">{day.dishes.map((dish) => <div key={dish.category} className="bag-dish-row"><span className="min-w-0 truncate">{dish.category === 'Món Đạm' ? '🍖' : dish.category === 'Món Rau' ? '🥬' : '🍲'} {dish.name}</span><span className="shrink-0 font-bold">{dish.portion_hand_rule}</span></div>)}</div>
+        <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">{day.health_benefits_note}</p>
+        <div className="mt-1.5 flex flex-wrap gap-1">{day.tags.map((tag) => <span key={tag} className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold text-secondary-foreground">{tag}</span>)}</div>
       </div>)}</div>}
-      {weekSpread && <div className="bag-estimate-card" data-testid="card-bag-summary">
+      {aiWeek && <div className="bag-estimate-card" data-testid="card-bag-summary">
         <p className="bag-estimate-title">📊 Thẻ Tổng Kết</p>
         <div className="mt-2 grid grid-cols-2 gap-3">
-          <div><p className="text-[10px] font-bold text-muted-foreground">Chi phí trung bình / bữa</p><p className="mt-0.5 text-lg font-bold" style={{ color: '#2D5A27' }}>{money(estimate.totalCost / BAG_MEALS_PER_WEEK)}</p></div>
-          <div><p className="text-[10px] font-bold text-muted-foreground">Tiết kiệm vào Quỹ Tích Sản</p><p className="mt-0.5 text-lg font-bold" style={{ color: '#E86A33' }}>{estimate.overallDays >= 7 ? money(Math.max(0, (prefs.targetBudget || 1200000) - estimate.totalCost)) : '—'}</p></div>
+          <div><p className="text-[10px] font-bold text-muted-foreground">Chi phí trung bình / bữa</p><p className="mt-0.5 text-lg font-bold" style={{ color: '#2D5A27' }}>{money(weekAvgCostPerMeal)}</p></div>
+          <div><p className="text-[10px] font-bold text-muted-foreground">Tiết kiệm vào Quỹ Tích Sản</p><p className="mt-0.5 text-lg font-bold" style={{ color: '#E86A33' }}>{weekFundSaving > 0 ? money(weekFundSaving) : '—'}</p></div>
         </div>
       </div>}
     </div>}
