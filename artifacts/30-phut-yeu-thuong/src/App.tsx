@@ -65,6 +65,23 @@ function readSpendLog(): SpendRecord[] {
     return [];
   }
 }
+
+// Streak Counter: "🔥 Chuỗi X Ngày Bếp Thảnh Thơi" — count is consecutive Vietnam-local calendar
+// days where the user tapped "đã xong mâm cơm hôm nay", resetting to 1 if a day is skipped.
+const STREAK_STORAGE_KEY = '30phut-streak';
+type StreakData = { count: number; lastDate: string };
+function readStreak(): StreakData {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(STREAK_STORAGE_KEY) || 'null') as Partial<StreakData> | null;
+    if (saved && typeof saved.count === 'number' && typeof saved.lastDate === 'string') return { count: saved.count, lastDate: saved.lastDate };
+  } catch { /* ignore corrupt storage */ }
+  return { count: 0, lastDate: '' };
+}
+
+const REMINDER_STORAGE_KEY = '30phut-reminder-enabled';
+const REMINDER_FIRED_STORAGE_KEY = '30phut-reminder-fired-date';
+const REMINDER_HOUR = 16;
+const REMINDER_MINUTE = 30;
 // ISO-8601 week key ("2026-W38"), anchored to Vietnam local date so it lines up with when người dùng thực sự đi chợ.
 function isoWeekKey(now = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now);
@@ -77,7 +94,7 @@ function isoWeekKey(now = new Date()) {
   const weekNum = 1 + Math.round(((d.getTime() - firstThursday.getTime()) / 86400000 - 3 + firstThursdayDayNum) / 7);
   return `${d.getUTCFullYear()}-W${String(weekNum).padStart(2, '0')}`;
 }
-function weekKeyLabel(weekKey: string) {
+function mondayDateOfWeekKey(weekKey: string) {
   const [yearStr, weekStr] = weekKey.split('-W');
   const year = Number(yearStr);
   const week = Number(weekStr);
@@ -85,6 +102,10 @@ function weekKeyLabel(weekKey: string) {
   const jan4Day = (jan4.getUTCDay() + 6) % 7;
   const monday = new Date(jan4);
   monday.setUTCDate(jan4.getUTCDate() - jan4Day + (week - 1) * 7);
+  return monday;
+}
+function weekKeyLabel(weekKey: string) {
+  const monday = mondayDateOfWeekKey(weekKey);
   const sunday = new Date(monday);
   sunday.setUTCDate(monday.getUTCDate() + 6);
   const fmt = (date: Date) => `${String(date.getUTCDate()).padStart(2, '0')}/${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -109,6 +130,9 @@ function formatDayMonth(date: Date, withYear = false) {
   const dd = String(date.getUTCDate()).padStart(2, '0');
   const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
   return withYear ? `${dd}/${mm}/${date.getUTCFullYear()}` : `${dd}/${mm}`;
+}
+function isoDateStr(date: Date) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }
 
 function getDeviceId() {
@@ -805,6 +829,8 @@ function Shell() {
   const [deviceId] = useState(getDeviceId);
   const [plan, setPlan] = useState(() => readStoredPlan(prefs));
   const [spendLog, setSpendLog] = useState<SpendRecord[]>(readSpendLog);
+  const [streak, setStreak] = useState<StreakData>(readStreak);
+  const [reminderEnabled, setReminderEnabled] = useState(() => window.localStorage.getItem(REMINDER_STORAGE_KEY) === 'true');
   const [bought, setBought] = useState<Set<string>>(() => {
     try {
       return new Set(JSON.parse(window.localStorage.getItem(BOUGHT_STORAGE_KEY) || '[]') as string[]);
@@ -864,6 +890,65 @@ function Shell() {
   useEffect(() => {
     window.localStorage.setItem(SPEND_LOG_STORAGE_KEY, JSON.stringify(spendLog));
   }, [spendLog]);
+  useEffect(() => {
+    window.localStorage.setItem(STREAK_STORAGE_KEY, JSON.stringify(streak));
+  }, [streak]);
+  // Web Notification reminder: fires once per day at 16h30 giờ Việt Nam while the app has a tab open —
+  // there's no backend push/cron here, so this is a best-effort local reminder, not a real Zalo push.
+  useEffect(() => {
+    if (!reminderEnabled || typeof Notification === 'undefined') return;
+    const checkTime = () => {
+      if (Notification.permission !== 'granted') return;
+      const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date());
+      const hour = Number(parts.find((part) => part.type === 'hour')?.value || -1);
+      const minute = Number(parts.find((part) => part.type === 'minute')?.value || -1);
+      const todayKey = isoDateStr(vietnamTodayDate());
+      if (hour === REMINDER_HOUR && minute === REMINDER_MINUTE && window.localStorage.getItem(REMINDER_FIRED_STORAGE_KEY) !== todayKey) {
+        new Notification('🍽️ 30 Phút Yêu Thương', { body: 'Đến giờ chuẩn bị mâm cơm chiều nay rồi! Mở app xem thực đơn hôm nay nhé 💚', icon: '/icons/icon-192.png', badge: '/icons/icon-192.png' });
+        window.localStorage.setItem(REMINDER_FIRED_STORAGE_KEY, todayKey);
+      }
+    };
+    checkTime();
+    const timer = window.setInterval(checkTime, 30_000);
+    return () => window.clearInterval(timer);
+  }, [reminderEnabled]);
+  const monthlySavings = useMemo(() => {
+    const now = vietnamTodayDate();
+    return spendLog.reduce((sum, record) => {
+      const monday = mondayDateOfWeekKey(record.weekKey);
+      const inThisMonth = monday.getUTCFullYear() === now.getUTCFullYear() && monday.getUTCMonth() === now.getUTCMonth();
+      return inThisMonth ? sum + Math.max(0, record.estimated - record.actual) : sum;
+    }, 0);
+  }, [spendLog]);
+  const isMealCheckedToday = streak.lastDate === isoDateStr(vietnamTodayDate());
+  const checkTodayMeal = () => {
+    const today = isoDateStr(vietnamTodayDate());
+    if (streak.lastDate === today) return;
+    setStreak((current) => {
+      const yesterday = isoDateStr(addDays(vietnamTodayDate(), -1));
+      return { count: current.lastDate === yesterday ? current.count + 1 : 1, lastDate: today };
+    });
+    trackEvent('daily_meal_checked', {});
+  };
+  const enableReminder = async () => {
+    if (typeof Notification === 'undefined') {
+      trackEvent('reminder_unsupported', {});
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') {
+      window.localStorage.setItem(REMINDER_STORAGE_KEY, 'true');
+      setReminderEnabled(true);
+      trackEvent('reminder_enabled', {});
+    } else {
+      trackEvent('reminder_denied', {});
+    }
+  };
+  const disableReminder = () => {
+    window.localStorage.setItem(REMINDER_STORAGE_KEY, 'false');
+    setReminderEnabled(false);
+    trackEvent('reminder_disabled', {});
+  };
   // Actual Spend Tracker: upserts this ISO week's record (estimate taken at record time) so the gap
   // between app dự toán and thực chi tại Bách Hóa Xanh becomes visible instead of silent.
   const recordActualSpend = (actual: number) => {
@@ -978,7 +1063,7 @@ function Shell() {
   if (location === '/shopping') page = <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} setQuantityOverrides={setQuantityOverrides} targetBudget={prefs.targetBudget || 1200000} prefs={prefs} spendLog={spendLog} onRecordSpend={recordActualSpend} isPro={isPro} onUpgrade={() => openUpgrade('meal_pairing_ai')} />;
   else if (location === '/costs') page = <div className="space-y-5"><CostsPage shopping={shopping} prefs={prefs} totalCost={totalCost} plan={accessiblePlan} spendLog={spendLog} /><KitchenEquityCard weeklySaving={Math.max(0, (prefs.targetBudget || 1200000) - totalCost)} /></div>;
   else if (location === '/ask-ai') page = <AskAiPageV2 prefs={prefs} isPro={isPro} onUpgrade={() => openUpgrade('ai_limit')} />;
-  else page = <HomePage plan={plan} isPro={isPro} onUpgrade={() => openUpgrade('locked_week')} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} totalCost={totalCost} forceBudget={forceBudget} budgetNotice={budgetNotice} swapNotice={swapNotice} onSwapDish={swapDish} spendLog={spendLog} />;
+  else page = <HomePage plan={plan} isPro={isPro} onUpgrade={() => openUpgrade('locked_week')} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} totalCost={totalCost} forceBudget={forceBudget} budgetNotice={budgetNotice} swapNotice={swapNotice} onSwapDish={swapDish} spendLog={spendLog} streak={streak} isMealCheckedToday={isMealCheckedToday} onCheckTodayMeal={checkTodayMeal} monthlySavings={monthlySavings} reminderEnabled={reminderEnabled} onEnableReminder={enableReminder} onDisableReminder={disableReminder} />;
   return <div className="app-shell grain"><DesktopSidebar location={location} /><header className="site-header border-b border-black/5"><div className="site-header-inner flex items-center justify-between gap-3"><Link href="/" className="site-header-brand flex items-center gap-3 no-underline" data-testid="link-home"><span className="flex h-11 w-11 items-center justify-center rounded-[18px] bg-[linear-gradient(135deg,hsl(113_25%_42%),hsl(113_34%_64%))] text-white shadow-[0_8px_18px_rgba(74,124,89,0.22)]"><ChefHat size={23} strokeWidth={2.4} /></span><span><span className="display-font block text-xl font-bold tracking-tight text-[hsl(113_25%_32%)]">30 Phút</span><span className="block text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">Yêu thương</span></span></Link><div className="top-actions flex items-center gap-2">{isPro ? <span className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-[hsl(31_90%_83%)] px-3 py-1.5 text-xs font-bold text-[hsl(24_28%_18%)]"><Crown size={13} /> Thành viên Pro</span> : <button onClick={() => openUpgrade('header')} className="tactile hidden md:inline-flex items-center gap-1.5 rounded-full bg-[linear-gradient(135deg,hsl(113_25%_42%),hsl(113_34%_64%))] px-3 py-2 text-xs font-bold text-white" data-testid="button-header-upgrade"><Crown size={13} /> Nâng cấp Pro</button>}<button onClick={() => window.print()} className="tactile hidden md:flex h-10 w-10 items-center justify-center rounded-full border border-[hsl(36_40%_88%)] bg-white text-muted-foreground" aria-label="In trang" data-testid="button-print"><Printer size={17} /></button>
 <button onClick={() => setDrawerOpen(true)} className="tactile flex h-11 w-11 items-center justify-center rounded-[18px] border border-[hsl(36_40%_88%)] bg-white text-[hsl(24_30%_17%)] shadow-[0_8px_16px_rgba(110,84,58,0.05)]" data-testid="button-open-drawer" aria-label="Mở menu"><Menu size={19} /></button></div></div></header><main className="content-wrap page-enter">{page}</main><BlogFooter /><BottomNav location={location} /><InstallAppBanner /><MobileDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} isPro={isPro} phone={globalPhone} onUpgrade={() => { setDrawerOpen(false); openUpgrade('drawer'); }} onOpenSettings={() => { if (location !== '/') { setLocation('/'); } setSettingsOpen(true); }} />
 <ProUpgradeModal globalPhone={globalPhone} setGlobalPhone={setGlobalPhone} globalEmail={globalEmail} setGlobalEmail={setGlobalEmail} open={upgradeOpen} onClose={() => setUpgradeOpen(false)} onUnlocked={unlockPro} /></div>;
@@ -1217,11 +1302,28 @@ function SundayTransitionBanner({ prefs, totalCost, spendLog, regenerate }: { pr
   </div>;
 }
 
-function HomePage({ plan, isPro, onUpgrade, prefs, settingsOpen, setSettingsOpen, updatePrefs, saveSettings, regenerate, expandedDay, setExpandedDay, activeMeal, setActiveMeal, favoriteDishes, setFavoriteDishes, totalCost, forceBudget, budgetNotice, swapNotice, onSwapDish, spendLog }: { plan: DayPlan[]; isPro: boolean; onUpgrade: () => void; prefs: Preferences; settingsOpen: boolean; setSettingsOpen: (value: boolean) => void; updatePrefs: (value: Partial<Preferences>) => void; saveSettings: () => void; regenerate: () => void; expandedDay: number; setExpandedDay: (value: number) => void; activeMeal: 'all' | 'breakfast' | 'lunch' | 'dinner'; setActiveMeal: (value: 'all' | 'breakfast' | 'lunch' | 'dinner') => void; favoriteDishes: Set<string>; setFavoriteDishes: (value: Set<string>) => void; totalCost: number; forceBudget: () => void; budgetNotice: string; swapNotice: string; onSwapDish: (dayIndex: number, slot: DishSlot) => void; spendLog: SpendRecord[] }) {
+// Daily Habit: streak card + "đã xong mâm cơm hôm nay" check-in + tháng-to-date grocery savings,
+// plus a soft toggle for the 16h30 local reminder (see the Shell effect for why it's browser-only).
+function StreakWidget({ streak, isCheckedToday, onCheck, monthlySavings, reminderEnabled, onEnableReminder, onDisableReminder }: { streak: StreakData; isCheckedToday: boolean; onCheck: () => void; monthlySavings: number; reminderEnabled: boolean; onEnableReminder: () => void; onDisableReminder: () => void }) {
+  return <section className="paper-card streak-card !mb-2" data-testid="card-streak">
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className={`streak-flame ${streak.count > 0 ? 'streak-flame-lit' : ''}`} aria-hidden="true">🔥</span>
+        <div className="min-w-0"><p className="truncate text-sm font-bold leading-5">Chuỗi {streak.count} Ngày Bếp Thảnh Thơi</p><p className="mt-0.5 truncate text-[11px] text-muted-foreground">{isCheckedToday ? 'Hôm nay đã xong xuôi, mai gặp lại nhé!' : 'Bấm khi mâm cơm hôm nay đã xong xuôi'}</p></div>
+      </div>
+      <button type="button" onClick={onCheck} disabled={isCheckedToday} className={`streak-check ${isCheckedToday ? 'streak-check-done' : ''}`} aria-label={isCheckedToday ? 'Đã hoàn thành mâm cơm hôm nay' : 'Đánh dấu đã hoàn thành mâm cơm hôm nay'} data-testid="button-streak-check">{isCheckedToday ? <Check size={19} /> : <span aria-hidden="true" className="streak-check-ring" />}</button>
+    </div>
+    {monthlySavings > 0 && <p className="streak-savings" data-testid="text-monthly-savings">💰 Tổng tiền chợ đã tiết kiệm tháng này: <strong>{money(monthlySavings)}</strong></p>}
+    <button type="button" onClick={reminderEnabled ? onDisableReminder : onEnableReminder} className={`streak-reminder-toggle ${reminderEnabled ? 'streak-reminder-on' : ''}`} data-testid="button-toggle-reminder">{reminderEnabled ? <><Check size={13} /> Đã bật nhắc mâm cơm 16h30</> : <>🔔 Bật Nhắc Mâm Cơm 16h30</>}</button>
+  </section>;
+}
+
+function HomePage({ plan, isPro, onUpgrade, prefs, settingsOpen, setSettingsOpen, updatePrefs, saveSettings, regenerate, expandedDay, setExpandedDay, activeMeal, setActiveMeal, favoriteDishes, setFavoriteDishes, totalCost, forceBudget, budgetNotice, swapNotice, onSwapDish, spendLog, streak, isMealCheckedToday, onCheckTodayMeal, monthlySavings, reminderEnabled, onEnableReminder, onDisableReminder }: { plan: DayPlan[]; isPro: boolean; onUpgrade: () => void; prefs: Preferences; settingsOpen: boolean; setSettingsOpen: (value: boolean) => void; updatePrefs: (value: Partial<Preferences>) => void; saveSettings: () => void; regenerate: () => void; expandedDay: number; setExpandedDay: (value: number) => void; activeMeal: 'all' | 'breakfast' | 'lunch' | 'dinner'; setActiveMeal: (value: 'all' | 'breakfast' | 'lunch' | 'dinner') => void; favoriteDishes: Set<string>; setFavoriteDishes: (value: Set<string>) => void; totalCost: number; forceBudget: () => void; budgetNotice: string; swapNotice: string; onSwapDish: (dayIndex: number, slot: DishSlot) => void; spendLog: SpendRecord[]; streak: StreakData; isMealCheckedToday: boolean; onCheckTodayMeal: () => void; monthlySavings: number; reminderEnabled: boolean; onEnableReminder: () => void; onDisableReminder: () => void }) {
   const today = plan[0];
   const visiblePlan = isPro ? plan : plan.slice(0, FREE_DAY_LIMIT);
   const units = unitsOf(prefs);
   return <div className="space-y-5 pb-5">
+    <StreakWidget streak={streak} isCheckedToday={isMealCheckedToday} onCheck={onCheckTodayMeal} monthlySavings={monthlySavings} reminderEnabled={reminderEnabled} onEnableReminder={onEnableReminder} onDisableReminder={onDisableReminder} />
     <SundayTransitionBanner prefs={prefs} totalCost={totalCost} spendLog={spendLog} regenerate={regenerate} />
     <div className="compact-message" aria-label="Thông điệp bếp"><span>🌿 Nấu nhanh một chút, thương nhau nhiều hơn.</span></div>
     {settingsOpen && <SettingsModal prefs={prefs} setOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} />}
@@ -1780,6 +1882,9 @@ function AskAiPageV2({ prefs, isPro, onUpgrade }: { prefs: Preferences; isPro: b
   const [loading, setLoading] = useState<'fridge' | 'recipe' | null>(null);
   const [error, setError] = useState('');
   const [aiUsage, setAiUsage] = useState<AiUsage>(readAiUsage);
+  const [spinning, setSpinning] = useState(false);
+  const [spinPreview, setSpinPreview] = useState<{ dam: Dish; rau: Dish; canh: Dish } | null>(null);
+  const [spinResult, setSpinResult] = useState<{ dam: Dish; rau: Dish; canh: Dish } | null>(null);
   const safety = { kids: prefs.kids, allergies: prefs.allergies, allergyOther: prefs.allergyOther };
   const allergyText = [...prefs.allergies, ...prefs.allergyOther.split(',').map((item) => item.trim()).filter(Boolean)];
   const aiRemaining = isPro ? null : Math.max(0, FREE_AI_LIMIT - aiUsage.count);
@@ -1869,7 +1974,45 @@ function AskAiPageV2({ prefs, isPro, onUpgrade }: { prefs: Preferences; isPro: b
     }
   };
 
+  // Daily Meal Spinner: a free, instant "quay số" pick from the local dish bank (already filtered by
+  // prefs — allergies, thời gian, ngân sách, ăn chay) so it never costs an AI credit.
+  const spinMeal = () => {
+    const damPool = poolAllowed(DAM, prefs);
+    const rauPool = poolAllowed(RAU, prefs);
+    const canhPool = poolAllowed(CANH, prefs);
+    if (!damPool.length || !rauPool.length || !canhPool.length || spinning) return;
+    const pickRandom = () => ({
+      dam: damPool[Math.floor(Math.random() * damPool.length)],
+      rau: rauPool[Math.floor(Math.random() * rauPool.length)],
+      canh: canhPool[Math.floor(Math.random() * canhPool.length)],
+    });
+    setSpinning(true);
+    setSpinResult(null);
+    trackEvent('meal_spinner_started', {});
+    let ticks = 0;
+    const interval = window.setInterval(() => {
+      setSpinPreview(pickRandom());
+      ticks++;
+      if (ticks >= 12) {
+        window.clearInterval(interval);
+        const final = pickRandom();
+        setSpinResult(final);
+        setSpinPreview(null);
+        setSpinning(false);
+        trackEvent('meal_spinner_result', { dam: final.dam.name, rau: final.rau.name, canh: final.canh.name });
+      }
+    }, 90);
+  };
+  const spinDisplay = spinPreview || spinResult;
+
   return <div className="mx-auto max-w-5xl space-y-5 pb-5">
+    <section className="meal-spinner-card" data-testid="card-meal-spinner">
+      <span className={`meal-spinner-dice ${spinning ? 'meal-spinner-dice-spinning' : ''}`} aria-hidden="true">🎲</span>
+      <h2 className="display-font mt-2 text-xl font-bold">Hôm Nay Ăn Gì?</h2>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">Quay ngẫu nhiên 1 Mâm Cơm 3 Món hợp khẩu vị và ngân sách nhà mình — không tốn lượt AI.</p>
+      <button type="button" onClick={spinMeal} disabled={spinning} className="warm-cta tactile mt-4 inline-flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-70" data-testid="button-spin-meal">{spinning ? <LoaderCircle size={16} className="animate-spin" /> : <span aria-hidden="true">🎲</span>} {spinning ? 'Đang quay...' : 'Quay Mâm Cơm Bất Ngờ'}</button>
+      {spinDisplay && <div className="mt-4 grid gap-2 sm:grid-cols-3">{(['dam', 'rau', 'canh'] as const).map((key) => { const dish = spinDisplay[key]; const label = key === 'dam' ? '🍖 Món Đạm' : key === 'rau' ? '🥬 Món Rau' : '🍲 Món Canh'; return <div key={key} className={`meal-spinner-result-card transition-opacity ${spinning ? 'opacity-60' : ''}`} data-testid={`text-spin-${key}`}><p className="text-[10px] font-bold uppercase tracking-wider text-primary">{label}</p><p className="mt-1 text-sm font-bold leading-5">{dish.name}</p></div>; })}</div>}
+    </section>
     <section className="rounded-[28px] bg-foreground p-6 text-background md:p-8">
       <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.17em] text-accent">Trợ lý bếp Gemini</p><h1 className="display-font mt-2 text-4xl font-bold tracking-tight">Hỏi gì cũng được.</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-background/70">Đưa ảnh tủ lạnh hoặc tên món ăn. AI sẽ gợi ý cách nấu nhanh, nhạt và hợp với nhà mình.</p></div><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground"><Sparkles size={22} /></span></div>
       <div className="mt-6 grid gap-2 sm:grid-cols-2"><button onClick={() => setMode('fridge')} className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${mode === 'fridge' ? 'border-accent bg-accent text-foreground' : 'border-background/15 bg-background/10 text-background'}`} data-testid="button-ai-fridge-mode"><Camera size={19} /><span><span className="block text-sm font-bold">📷 Nhìn ảnh tủ lạnh</span><span className="mt-0.5 block text-[11px] opacity-75">Nhận diện nguyên liệu, gợi ý 3 món</span></span></button><button onClick={() => setMode('recipe')} className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${mode === 'recipe' ? 'border-accent bg-accent text-foreground' : 'border-background/15 bg-background/10 text-background'}`} data-testid="button-ai-recipe-mode"><BookOpen size={19} /><span><span className="block text-sm font-bold">📖 Tra cách nấu</span><span className="mt-0.5 block text-[11px] opacity-75">Định lượng 1 khẩu phần và dinh dưỡng</span></span></button></div>

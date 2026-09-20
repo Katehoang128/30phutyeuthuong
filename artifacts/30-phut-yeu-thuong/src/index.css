@@ -241,6 +241,26 @@
 .menu-day-selector { position: sticky; top: 72px; z-index: 30; margin-inline: -16px; padding: 8px 16px; background: rgba(250, 249, 245, .94); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 .menu-day-selector::-webkit-scrollbar { display: none; }
 
+/* Daily Habit: streak widget + meal spinner */
+@keyframes flame-flicker { 0%, 100% { transform: scale(1) rotate(-2deg); } 50% { transform: scale(1.08) rotate(2deg); } }
+.streak-card { background: linear-gradient(135deg, #FFF8ED, #FAF9F5); border-color: rgba(232, 106, 51, .18); }
+.streak-flame { display: inline-flex; font-size: 26px; filter: grayscale(1) opacity(.45); }
+.streak-flame-lit { filter: none; animation: flame-flicker 1.8s ease-in-out infinite; }
+.streak-check { display: flex; height: 40px; width: 40px; flex: 0 0 auto; align-items: center; justify-content: center; border-radius: 999px; border: 2px solid rgba(232, 106, 51, .4); background: #fff; color: #E86A33; transition: transform .15s ease, background-color .15s ease; }
+.streak-check:not(:disabled):hover { transform: scale(1.06); }
+.streak-check:not(:disabled):active { transform: scale(.94); }
+.streak-check-ring { display: block; height: 16px; width: 16px; border-radius: 999px; border: 2px solid currentColor; }
+.streak-check-done { border-color: #2D5A27; background: #2D5A27; color: #fff; }
+.streak-savings { margin-top: 10px; border-radius: 12px; background: rgba(45, 90, 39, .08); padding: 8px 12px; color: #2D5A27; font-size: 12px; font-weight: 700; line-height: 17px; }
+.streak-reminder-toggle { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; border-radius: 999px; border: 1px solid var(--card-border-soft); background: #fff; padding: 7px 13px; color: #6C757D; font-size: 11px; font-weight: 700; transition: all .15s ease; }
+.streak-reminder-toggle:hover { border-color: rgba(45, 90, 39, .3); }
+.streak-reminder-on { border-color: rgba(45, 90, 39, .35); background: rgba(45, 90, 39, .08); color: #2D5A27; }
+@keyframes dice-spin { 0% { transform: rotate(0deg) scale(1); } 50% { transform: rotate(180deg) scale(1.15); } 100% { transform: rotate(360deg) scale(1); } }
+.meal-spinner-card { border-radius: 20px; border: 1px solid rgba(232, 106, 51, .2); background: linear-gradient(135deg, #FFF3E8, #FAF9F5); padding: 18px; text-align: center; }
+.meal-spinner-dice { display: inline-flex; font-size: 40px; }
+.meal-spinner-dice-spinning { animation: dice-spin .5s linear infinite; }
+.meal-spinner-result-card { border-radius: 14px; border: 1px solid var(--card-border-soft); background: #fff; padding: 12px; text-align: left; box-shadow: 0 4px 12px rgba(0, 0, 0, .05); }
+
 @media (min-width: 768px) {
   .site-header-inner { width: min(1120px, calc(100% - 64px)); }
   .menu-day-selector { top: 78px; margin-inline: 0; border-radius: 16px; }
