@@ -111,6 +111,14 @@ function getDeviceId() {
   return deviceId;
 }
 
+// Real-time Meal Auto-Switching: picks the meal tab matching the device's current clock, so opening
+// the app in the evening lands on Bữa Tối instead of always defaulting to Bữa Trưa.
+function getCurrentMealType(): 'breakfast' | 'lunch' | 'dinner' {
+  const hours = new Date().getHours();
+  if (hours >= 5 && hours < 11) return 'breakfast'; // 5h - 10h59: Bữa Sáng
+  if (hours >= 11 && hours < 16) return 'lunch'; // 11h - 15h59: Bữa Trưa
+  return 'dinner'; // 16h - 4h59 sáng hôm sau: Bữa Tối
+}
 function vietnamDayName(now = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Ho_Chi_Minh',
@@ -1088,7 +1096,7 @@ function SettingsModal({ prefs, setOpen, updatePrefs, saveSettings }: { prefs: P
 function ZeroScrollMealPlanner({ plan, prefs, favorites, setFavorites, onSwap }: { plan: DayPlan[]; prefs: Preferences; favorites: Set<string>; setFavorites: (value: Set<string>) => void; onSwap: (dayIndex: number, slot: DishSlot) => void }) {
   const [, setLocation] = useLocation();
   const [selectedDay, setSelectedDay] = useState(plan[0]?.day || DAY_NAMES[0]);
-  const [selectedMeal, setSelectedMeal] = useState<'lunch' | 'dinner' | 'breakfast'>('lunch');
+  const [selectedMeal, setSelectedMeal] = useState<'lunch' | 'dinner' | 'breakfast'>(getCurrentMealType);
   useEffect(() => {
     setSelectedDay(plan[0]?.day || DAY_NAMES[0]);
   }, [plan]);
