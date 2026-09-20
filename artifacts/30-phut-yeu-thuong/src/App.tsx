@@ -1450,6 +1450,7 @@ function ShoppingPage({ shopping, bought, setBought, customItems, setCustomItems
 function ShoppingGroup({ category, items, bought, toggle }: { category: string; items: [string, { qty: number; unit?: string }][]; bought: Set<string>; toggle: (name: string) => void }) { return <section className="paper-card overflow-hidden"><div className="flex items-center justify-between border-b bg-muted/45 px-4 py-3"><h2 className="text-sm font-bold">{category}</h2><span className="rounded-full bg-card px-2.5 py-1 text-[10px] font-bold text-muted-foreground">{items.length} món</span></div><div className="divide-y">{items.map(([name, value]) => { const done = bought.has(name); return <div key={name} className={`flex items-center justify-between gap-3 px-4 py-3.5 transition-opacity ${done ? 'opacity-45' : ''}`}><button onClick={() => toggle(name)} className="flex min-w-0 items-center gap-3 text-left" data-testid={`button-bought-${name}`}><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${done ? 'border-[hsl(113_40%_45%)] bg-[hsl(113_40%_45%)] text-white' : 'border-[hsl(37_43%_74%)] bg-card'}`}>{done && <Check size={14} strokeWidth={3} />}</span><span className={`text-sm font-semibold ${done ? 'line-through' : ''}`}>{name}</span></button><span className="shrink-0 text-xs font-bold text-muted-foreground">{displayQuantity(value)}</span></div>; })}</div></section>; }
 
 function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomItems, totalCost, setQuantityOverrides, targetBudget, prefs, spendLog, onRecordSpend }: { shopping: Aggregate; bought: Set<string>; setBought: (value: Set<string>) => void; customItems: { name: string; bought: boolean }[]; setCustomItems: (value: { name: string; bought: boolean }[]) => void; totalCost: number; setQuantityOverrides: (value: Record<string, number> | ((current: Record<string, number>) => Record<string, number>)) => void; targetBudget: number; prefs: Preferences; spendLog: SpendRecord[]; onRecordSpend: (actual: number) => void }) {
+  const [mode, setMode] = useState<'ai' | 'custom'>('ai');
   const [newItem, setNewItem] = useState('');
   const [copied, setCopied] = useState(false);
   const entries = Object.entries(shopping) as [string, { qty: number; unit?: string }][];
@@ -1510,20 +1511,25 @@ function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomIte
   return <div className="space-y-5 pb-5">
     <section className="shopping-page-header">
       <div className="shopping-title-row"><div><p className="text-[10px] font-bold uppercase tracking-[.15em] text-primary">Đi chợ</p><h1 className="shopping-page-title">Túi đi chợ tuần này</h1></div>
-      <div className="flex flex-wrap gap-2">
+      {mode === 'ai' && <div className="flex flex-wrap gap-2">
         <button onClick={copyShoppingList} className="shopping-action warm-cta tactile inline-flex items-center justify-center gap-1.5" data-testid="button-share-zalo">{copied ? <Check size={14} /> : <Share2 size={14} />}{copied ? 'Đã copy' : '📱 Gửi Zalo'}</button>
         <button onClick={() => window.print()} className="shopping-action tactile inline-flex items-center gap-1.5 rounded-full border border-[hsl(34_31%_90%)] bg-white font-bold shadow-sm" data-testid="button-print-shopping"><Printer size={14} /> In</button>
-      </div></div>
-      <div className="shopping-budget-strip" aria-label="Tiến độ ngân sách tuần"><span className="shrink-0">💰 Đã chi: {money(totalCost)} / {money(targetBudget)}</span><span className="shopping-budget-track" aria-hidden="true"><span style={{ width: `${budgetPercent}%` }} /></span><span className="shrink-0">Còn lại: {money(remainingBudget)} ({boughtCount}/{totalCount} món)</span>
+      </div>}</div>
+      <div className="mt-3 flex rounded-xl bg-muted p-1" role="tablist" aria-label="Chọn chế độ đi chợ">
+        <button type="button" onClick={() => setMode('ai')} className={`flex min-h-11 flex-1 items-center justify-center gap-1 rounded-lg px-2 py-2 text-center text-xs font-bold leading-4 transition-colors ${mode === 'ai' ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`} role="tab" aria-selected={mode === 'ai'} data-testid="button-mode-ai">🤖 AI Gợi Ý Thực Đơn Trước</button>
+        <button type="button" onClick={() => setMode('custom')} className={`flex min-h-11 flex-1 items-center justify-center gap-1 rounded-lg px-2 py-2 text-center text-xs font-bold leading-4 transition-colors ${mode === 'custom' ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`} role="tab" aria-selected={mode === 'custom'} data-testid="button-mode-custom">🧺 Tôi Tự Nhập Túi Đồ / Tủ Lạnh</button>
       </div>
+      {mode === 'ai' && <div className="shopping-budget-strip" aria-label="Tiến độ ngân sách tuần"><span className="shrink-0">💰 Đã chi: {money(totalCost)} / {money(targetBudget)}</span><span className="shopping-budget-track" aria-hidden="true"><span style={{ width: `${budgetPercent}%` }} /></span><span className="shrink-0">Còn lại: {money(remainingBudget)} ({boughtCount}/{totalCount} món)</span>
+      </div>}
     </section>
-    <ActualSpendTracker estimated={totalCost} spendLog={spendLog} onRecordSpend={onRecordSpend} />
-    <ShoppingGroupV2 title="Thực phẩm tươi sống" subtitle="Thịt, cá, tôm, rau và củ" items={freshItems} bought={bought} toggle={toggle} updateQuantity={updateQuantity} kind="fresh" />
-    <ShoppingGroupV2 title="Đồ khô & gia vị" subtitle="Gạo, bún, tôm khô và các món để dành" items={dryItems} bought={bought} toggle={toggle} updateQuantity={updateQuantity} kind="dry" />
+    {mode === 'ai' ? <>
+      <ActualSpendTracker estimated={totalCost} spendLog={spendLog} onRecordSpend={onRecordSpend} />
+      <ShoppingGroupV2 title="Thực phẩm tươi sống" subtitle="Thịt, cá, tôm, rau và củ" items={freshItems} bought={bought} toggle={toggle} updateQuantity={updateQuantity} kind="fresh" />
+      <ShoppingGroupV2 title="Đồ khô & gia vị" subtitle="Gạo, bún, tôm khô và các món để dành" items={dryItems} bought={bought} toggle={toggle} updateQuantity={updateQuantity} kind="dry" />
+    </> : <CustomBagAiCard prefs={prefs} />}
     <section className="paper-card border-[hsl(113_40%_45%/.3)] bg-secondary/45 p-4 md:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-[hsl(113_33%_30%)]">Mua tươi sống tiện hơn</p><p className="mt-1 text-sm font-semibold">Đặt một lần, giao đủ rau củ và thịt cá cho cả tuần.</p></div><a href={BACH_HOA_XANH_AFFILIATE_URL} target="_blank" rel="nofollow sponsored noopener" className="tactile inline-flex items-center justify-center gap-2 rounded-xl bg-[hsl(113_40%_45%)] px-4 py-3 text-xs font-bold text-white shadow-[0_4px_0_hsl(113_40%_35%)]" data-testid="link-bach-hoa-xanh"><ShoppingBasket size={16} /> 🛒 Đặt giao tận nhà qua Bách Hóa Xanh <ExternalLink size={13} /></a></div>
     </section>
-    <CustomBagAiCard prefs={prefs} />
     <section className="paper-card p-5"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-muted-foreground">Tự thêm</p><h2 className="display-font mt-1 text-2xl font-bold">Món cần nhớ</h2></div><Plus size={20} className="text-primary" /></div><div className="mt-4 flex gap-2"><input value={newItem} onChange={(event) => setNewItem(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && add()} placeholder="Ví dụ: khăn giấy, nước rửa rau" className="min-w-0 flex-1 rounded-xl border bg-background px-3 py-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-custom-shopping" /><button onClick={add} className="tactile rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground" data-testid="button-add-shopping"><Plus size={16} /></button></div><div className="mt-3 space-y-2">{customItems.length === 0 ? <p className="rounded-xl border border-dashed p-4 text-center text-xs text-muted-foreground">Chưa có món tự thêm. Danh sách này chỉ của riêng nhà mình.</p> : customItems.map((item, index) => <div key={`${item.name}-${index}`} className={`flex items-center justify-between rounded-xl border bg-background px-3 py-3 ${item.bought ? 'opacity-50' : ''}`}><button onClick={() => setCustomItems(customItems.map((entry, i) => i === index ? { ...entry, bought: !entry.bought } : entry))} className="flex min-w-0 items-center gap-3 text-left text-sm font-bold" data-testid={`button-toggle-custom-${index}`}><span className={`flex h-5 w-5 items-center justify-center rounded-full border ${item.bought ? 'border-[hsl(113_40%_45%)] bg-[hsl(113_40%_45%)] text-white' : ''}`}>{item.bought && <Check size={12} />}</span><span className={item.bought ? 'line-through' : ''}>{item.name}</span></button><button onClick={() => setCustomItems(customItems.filter((_, i) => i !== index))} className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-destructive" aria-label="Xóa món tự thêm" data-testid={`button-remove-custom-${index}`}><Trash2 size={15} /></button></div>)}</div></section>
   </div>;
 }
@@ -1650,18 +1656,26 @@ function CustomBagAiCard({ prefs }: { prefs: Preferences }) {
       })}</div>}
       {bagItems.length > 0 && <div className="bag-estimate-card">
         <p className="bag-estimate-title">🛒 Dự toán túi đồ tuần này ({BAG_MEALS_PER_WEEK} bữa · {headcount} người)</p>
+        <p className="mt-1.5 text-[11px] font-bold text-muted-foreground">🍽️ Khối lượng đã nhập quy đổi đủ khoảng <span className="text-primary">{Math.max(0, Math.floor(estimate.overallDays * 2))} bữa</span> mâm cơm 3 món cho khẩu phần {headcount} người</p>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs font-bold">📊 Tổng chi phí: <span className="text-primary">{money(estimate.totalCost)}</span></span>
           <span className="text-[11px] font-bold text-muted-foreground">💡 ~{money(estimate.totalCost / BAG_MEALS_PER_WEEK)} / bữa mâm cơm 3 món</span>
         </div>
         {estimate.shortages.length > 0 ? <div className="mt-2 space-y-1.5">{estimate.shortages.map((shortage) => <div key={shortage.group} className="budget-alert-low rounded-xl px-3 py-2 text-[11px] font-bold leading-5" data-testid={`text-bag-shortage-${shortage.group}`}>⚠️ Thiếu {BAG_GROUP_LABELS[shortage.group]} cho khoảng {shortage.missingDays.toFixed(1)} ngày cuối tuần. Gợi ý mua thêm ~{money(shortage.missingCost)} {shortage.topup} để đủ 7 ngày.</div>)}</div> : <div className="budget-alert-high mt-2 rounded-xl px-3 py-2 text-[11px] font-bold leading-5" data-testid="text-bag-surplus">{estimate.surplusDays > 0.4 ? `✅ Túi đồ đủ ăn trong ${Math.floor(estimate.overallDays)} ngày, dư ra ${money(estimate.surplusCost)} có thể trích vào Quỹ Tích Sản 2036.` : '✅ Túi đồ vừa khớp trọn 7 ngày, không dư không thiếu.'}</div>}
       </div>}
-      {bagItems.length > 0 && <button onClick={runAiSpread} className="bag-ai-button tactile flex w-full items-center justify-center gap-1.5" data-testid="button-ai-spread-week"><Sparkles size={14} /> ⚡ AI Tự Động Phân Bổ Vào Thực Đơn 7 Ngày ({BAG_MEALS_PER_WEEK} Bữa)</button>}
+      {bagItems.length > 0 && <button onClick={runAiSpread} className="bag-ai-button tactile flex w-full items-center justify-center gap-1.5" data-testid="button-ai-spread-week"><Sparkles size={14} /> ⚡ AI Ghép Mâm Cơm Tuần Mới</button>}
       {weekSpread && <div className="space-y-1.5 pt-1">{weekSpread.map((day) => <div key={day.day} className="bag-day-row">
         <span className="bag-day-name">{day.day}</span>
         <span className="bag-day-dish">{day.dam ? <>🍖 {day.dam.name} <em>({day.damMethod})</em></> : <span className="text-muted-foreground">Chưa có món đạm</span>}</span>
         <span className="bag-day-dish">{day.rau ? <>🥬 {day.rau.name}</> : <span className="text-muted-foreground">Chưa có rau</span>}</span>
       </div>)}</div>}
+      {weekSpread && <div className="bag-estimate-card" data-testid="card-bag-summary">
+        <p className="bag-estimate-title">📊 Thẻ Tổng Kết</p>
+        <div className="mt-2 grid grid-cols-2 gap-3">
+          <div><p className="text-[10px] font-bold text-muted-foreground">Chi phí trung bình / bữa</p><p className="mt-0.5 text-lg font-bold" style={{ color: '#2D5A27' }}>{money(estimate.totalCost / BAG_MEALS_PER_WEEK)}</p></div>
+          <div><p className="text-[10px] font-bold text-muted-foreground">Tiết kiệm vào Quỹ Tích Sản</p><p className="mt-0.5 text-lg font-bold" style={{ color: '#E86A33' }}>{estimate.overallDays >= 7 ? money(Math.max(0, (prefs.targetBudget || 1200000) - estimate.totalCost)) : '—'}</p></div>
+        </div>
+      </div>}
     </div>}
   </section>;
 }
