@@ -82,6 +82,26 @@ function weekKeyLabel(weekKey: string) {
   const fmt = (date: Date) => `${String(date.getUTCDate()).padStart(2, '0')}/${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
   return `${fmt(monday)} - ${fmt(sunday)}`;
 }
+// Sunday Transition Mode date helpers — all math runs on the Vietnam-local calendar date so the
+// week boundary flips at Vietnam midnight, not the visitor's own timezone.
+function vietnamTodayDate(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now);
+  const value = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value || 0);
+  return new Date(Date.UTC(value('year'), value('month') - 1, value('day')));
+}
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+function mondayOfWeek(date: Date) {
+  return addDays(date, -((date.getUTCDay() + 6) % 7));
+}
+function formatDayMonth(date: Date, withYear = false) {
+  const dd = String(date.getUTCDate()).padStart(2, '0');
+  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+  return withYear ? `${dd}/${mm}/${date.getUTCFullYear()}` : `${dd}/${mm}`;
+}
 
 function getDeviceId() {
   const existing = window.localStorage.getItem(DEVICE_ID_STORAGE_KEY);
@@ -948,7 +968,7 @@ function Shell() {
   if (location === '/shopping') page = <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} setQuantityOverrides={setQuantityOverrides} targetBudget={prefs.targetBudget || 1200000} prefs={prefs} spendLog={spendLog} onRecordSpend={recordActualSpend} />;
   else if (location === '/costs') page = <div className="space-y-5"><CostsPage shopping={shopping} prefs={prefs} totalCost={totalCost} plan={accessiblePlan} spendLog={spendLog} /><KitchenEquityCard weeklySaving={Math.max(0, (prefs.targetBudget || 1200000) - totalCost)} /></div>;
   else if (location === '/ask-ai') page = <AskAiPageV2 prefs={prefs} isPro={isPro} onUpgrade={() => openUpgrade('ai_limit')} />;
-  else page = <HomePage plan={plan} isPro={isPro} onUpgrade={() => openUpgrade('locked_week')} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} totalCost={totalCost} forceBudget={forceBudget} budgetNotice={budgetNotice} swapNotice={swapNotice} onSwapDish={swapDish} />;
+  else page = <HomePage plan={plan} isPro={isPro} onUpgrade={() => openUpgrade('locked_week')} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} totalCost={totalCost} forceBudget={forceBudget} budgetNotice={budgetNotice} swapNotice={swapNotice} onSwapDish={swapDish} spendLog={spendLog} />;
   return <div className="app-shell grain"><DesktopSidebar location={location} /><header className="site-header border-b border-black/5"><div className="site-header-inner flex items-center justify-between gap-3"><Link href="/" className="site-header-brand flex items-center gap-3 no-underline" data-testid="link-home"><span className="flex h-11 w-11 items-center justify-center rounded-[18px] bg-[linear-gradient(135deg,hsl(113_25%_42%),hsl(113_34%_64%))] text-white shadow-[0_8px_18px_rgba(74,124,89,0.22)]"><ChefHat size={23} strokeWidth={2.4} /></span><span><span className="display-font block text-xl font-bold tracking-tight text-[hsl(113_25%_32%)]">30 Phút</span><span className="block text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">Yêu thương</span></span></Link><div className="top-actions flex items-center gap-2">{isPro ? <span className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-[hsl(31_90%_83%)] px-3 py-1.5 text-xs font-bold text-[hsl(24_28%_18%)]"><Crown size={13} /> Thành viên Pro</span> : <button onClick={() => openUpgrade('header')} className="tactile hidden md:inline-flex items-center gap-1.5 rounded-full bg-[linear-gradient(135deg,hsl(113_25%_42%),hsl(113_34%_64%))] px-3 py-2 text-xs font-bold text-white" data-testid="button-header-upgrade"><Crown size={13} /> Nâng cấp Pro</button>}<button onClick={() => window.print()} className="tactile hidden md:flex h-10 w-10 items-center justify-center rounded-full border border-[hsl(36_40%_88%)] bg-white text-muted-foreground" aria-label="In trang" data-testid="button-print"><Printer size={17} /></button>
 <button onClick={() => setDrawerOpen(true)} className="tactile flex h-11 w-11 items-center justify-center rounded-[18px] border border-[hsl(36_40%_88%)] bg-white text-[hsl(24_30%_17%)] shadow-[0_8px_16px_rgba(110,84,58,0.05)]" data-testid="button-open-drawer" aria-label="Mở menu"><Menu size={19} /></button></div></div></header><main className="content-wrap page-enter">{page}</main><BlogFooter /><BottomNav location={location} /><InstallAppBanner /><MobileDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} isPro={isPro} phone={globalPhone} onUpgrade={() => { setDrawerOpen(false); openUpgrade('drawer'); }} onOpenSettings={() => { if (location !== '/') { setLocation('/'); } setSettingsOpen(true); }} />
 <ProUpgradeModal globalPhone={globalPhone} setGlobalPhone={setGlobalPhone} globalEmail={globalEmail} setGlobalEmail={setGlobalEmail} open={upgradeOpen} onClose={() => setUpgradeOpen(false)} onUnlocked={unlockPro} /></div>;
@@ -1157,11 +1177,42 @@ function BhxDailyCartCard({ dishes, units, mealLabel, selectedDay }: { dishes: {
   </section>;
 }
 
-function HomePage({ plan, isPro, onUpgrade, prefs, settingsOpen, setSettingsOpen, updatePrefs, saveSettings, regenerate, expandedDay, setExpandedDay, activeMeal, setActiveMeal, favoriteDishes, setFavoriteDishes, totalCost, forceBudget, budgetNotice, swapNotice, onSwapDish }: { plan: DayPlan[]; isPro: boolean; onUpgrade: () => void; prefs: Preferences; settingsOpen: boolean; setSettingsOpen: (value: boolean) => void; updatePrefs: (value: Partial<Preferences>) => void; saveSettings: () => void; regenerate: () => void; expandedDay: number; setExpandedDay: (value: number) => void; activeMeal: 'all' | 'breakfast' | 'lunch' | 'dinner'; setActiveMeal: (value: 'all' | 'breakfast' | 'lunch' | 'dinner') => void; favoriteDishes: Set<string>; setFavoriteDishes: (value: Set<string>) => void; totalCost: number; forceBudget: () => void; budgetNotice: string; swapNotice: string; onSwapDish: (dayIndex: number, slot: DishSlot) => void }) {
+// Sunday Transition Mode: outside Sunday it's a quiet week-range line; on Chủ Nhật it swaps to a
+// week-close summary + a CTA that kicks off next week's plan and a "dọn tủ" nudge before shopping fresh.
+function SundayTransitionBanner({ prefs, totalCost, spendLog, regenerate }: { prefs: Preferences; totalCost: number; spendLog: SpendRecord[]; regenerate: () => void }) {
+  const [, setLocation] = useLocation();
+  const today = vietnamTodayDate();
+  const isSunday = today.getUTCDay() === 0;
+  const thisMonday = mondayOfWeek(today);
+  const thisSunday = addDays(thisMonday, 6);
+
+  if (!isSunday) {
+    return <p className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground" data-testid="text-week-range"><CalendarDays size={13} className="shrink-0" /> Tuần này: {formatDayMonth(thisMonday)} - {formatDayMonth(thisSunday, true)}</p>;
+  }
+
+  const nextMonday = addDays(thisMonday, 7);
+  const nextSunday = addDays(nextMonday, 6);
+  const spendRecord = spendLog.find((record) => record.weekKey === isoWeekKey());
+  const saving = spendRecord ? Math.max(0, spendRecord.estimated - spendRecord.actual) : Math.max(0, (prefs.targetBudget || 1200000) - totalCost);
+  const startNewWeek = () => { regenerate(); setLocation('/shopping'); };
+
+  return <div className="space-y-3" data-testid="section-sunday-transition">
+    {saving > 0 && <section className="budget-alert-high rounded-2xl p-4 text-sm font-bold leading-6" data-testid="card-week-savings-summary">🎉 Tuần qua ({formatDayMonth(thisMonday)} - Hôm nay), chị đã tiết kiệm được {money(saving)}!</section>}
+    <div><p className="text-[10px] font-bold uppercase tracking-[.15em] text-primary">Chủ Nhật · Chuyển giao tuần</p><h2 className="display-font mt-1 text-xl font-bold leading-snug">🔄 Dự Toán Tuần Tới (Thứ 2, {formatDayMonth(nextMonday)} - CN, {formatDayMonth(nextSunday, true)})</h2></div>
+    <button type="button" onClick={startNewWeek} className="warm-cta tactile flex w-full items-center justify-center gap-2 text-center" data-testid="button-start-new-week">✨ Lên Thực Đơn & Đi Chợ Cho Tuần Mới (Từ {formatDayMonth(nextMonday)})</button>
+    <div className="rounded-2xl border border-dashed border-[hsl(18_80%_55%/.35)] bg-[hsl(18_80%_55%/.06)] p-3.5" data-testid="card-zero-dong-challenge">
+      <p className="text-sm font-bold">🧊 Thách thức Dọn Tủ 0-Đồng Chủ Nhật</p>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">Trước khi đi chợ tuần mới, thử nấu hết rau củ, thịt cá còn sót lại trong tủ lạnh — không tốn thêm đồng nào mà vẫn có bữa ngon.</p>
+    </div>
+  </div>;
+}
+
+function HomePage({ plan, isPro, onUpgrade, prefs, settingsOpen, setSettingsOpen, updatePrefs, saveSettings, regenerate, expandedDay, setExpandedDay, activeMeal, setActiveMeal, favoriteDishes, setFavoriteDishes, totalCost, forceBudget, budgetNotice, swapNotice, onSwapDish, spendLog }: { plan: DayPlan[]; isPro: boolean; onUpgrade: () => void; prefs: Preferences; settingsOpen: boolean; setSettingsOpen: (value: boolean) => void; updatePrefs: (value: Partial<Preferences>) => void; saveSettings: () => void; regenerate: () => void; expandedDay: number; setExpandedDay: (value: number) => void; activeMeal: 'all' | 'breakfast' | 'lunch' | 'dinner'; setActiveMeal: (value: 'all' | 'breakfast' | 'lunch' | 'dinner') => void; favoriteDishes: Set<string>; setFavoriteDishes: (value: Set<string>) => void; totalCost: number; forceBudget: () => void; budgetNotice: string; swapNotice: string; onSwapDish: (dayIndex: number, slot: DishSlot) => void; spendLog: SpendRecord[] }) {
   const today = plan[0];
   const visiblePlan = isPro ? plan : plan.slice(0, FREE_DAY_LIMIT);
   const units = unitsOf(prefs);
   return <div className="space-y-5 pb-5">
+    <SundayTransitionBanner prefs={prefs} totalCost={totalCost} spendLog={spendLog} regenerate={regenerate} />
     <div className="compact-message" aria-label="Thông điệp bếp"><span>🌿 Nấu nhanh một chút, thương nhau nhiều hơn.</span></div>
     {settingsOpen && <SettingsModal prefs={prefs} setOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} />}
     <div className="hidden md:block"><MindfulKitchenMessage /></div>
