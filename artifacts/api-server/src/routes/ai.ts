@@ -4,7 +4,10 @@ import {
   AnalyzeFridgeImageResponse,
   LookupRecipeBody,
   LookupRecipeResponse,
+  GenerateMealTrayBody,
+  GenerateMealTrayResponse,
 } from "@workspace/api-zod";
+import { isLunarFirstOrFullMoonDay } from "../lib/lunar";
 
 const router: IRouter = Router();
 const GEMINI_MODEL = "gemini-3.6-flash";
@@ -141,6 +144,91 @@ calories là kcal, protein và fat tính bằng gram. Định lượng phải c�
   } catch (error) {
     req.log.error({ err: error }, "Recipe lookup failed");
     res.status(502).json({ error: "Mình chưa tra được món này lúc này. Bạn thử lại sau ít giây nhé." });
+  }
+});
+
+function familyProfileNote(familyProfile: { adults: number; elderly: number; kids: number; budgetPerMeal?: number }) {
+  const members = [
+    familyProfile.adults > 0 ? `${familyProfile.adults} người lớn` : null,
+    familyProfile.elderly > 0 ? `${familyProfile.elderly} người lớn tuổi` : null,
+    familyProfile.kids > 0 ? `${familyProfile.kids} trẻ nhỏ` : null,
+  ].filter(Boolean).join(", ") || "1 người lớn";
+  const budgetLine = familyProfile.budgetPerMeal
+    ? `Ngân sách mong muốn cho mâm cơm này khoảng ${familyProfile.budgetPerMeal.toLocaleString("vi-VN")} đ — ưu tiên tối ưu chi phí quanh mức này, không vượt quá 20%.`
+    : "Chưa có ngân sách cụ thể, hãy ước tính chi phí hợp lý theo giá chợ Việt Nam hiện tại.";
+  return `Khẩu phần cho gia đình gồm ${members}. Định lượng nguyên liệu theo Quy tắc Bàn tay phải nhân đúng theo tổng số thành viên này (mỗi người 1 lòng bàn tay đạm, 2 cả bàn tay rau). ${budgetLine}`;
+}
+
+function bagIngredientsNote(bagIngredients?: { name: string; amount: string }[]) {
+  if (!bagIngredients?.length) return "";
+  const list = bagIngredients.map((item) => `${item.name} (${item.amount})`).join(", ");
+  return `\n\nCHẾ ĐỘ TỰ NHẬP TÚI ĐỒ / DỌN TỦ: Người dùng đã có sẵn các nguyên liệu sau, BẮT BUỘC tận dụng tối đa để rải thành mâm cơm 3 món hoàn chỉnh, hạn chế thêm nguyên liệu mới ngoài danh sách trừ khi thật sự cần: ${list}. Đặt TÊN MÓN theo cách tả thực hấp dẫn (ví dụ: "Thịt ba chỉ luộc chấm mắm tôm chua"), TUYỆT ĐỐI KHÔNG viết tên món kiểu liệt kê nguyên liệu thô (ví dụ sai: "Thịt heo (Luộc)"). Nếu túi đồ thiếu rau, hãy tự động thêm 1 món canh bình dân dễ mua để bổ sung chất xơ.`;
+}
+
+function lunarNote(dateISO?: string) {
+  const date = dateISO ? new Date(`${dateISO}T00:00:00Z`) : new Date();
+  const { isSpecial, label } = isLunarFirstOrFullMoonDay(date);
+  return isSpecial
+    ? `\n\nLƯU Ý ĐẶC BIỆT: Hôm nay là ${label}. BẮT BUỘC gợi ý "Mâm Cơm Chay Thanh Tịnh Đủ Chất" — không dùng bất kỳ thịt, cá, hải sản hay trứng nào, chỉ dùng đạm thực vật (đậu hũ, nấm, các loại đậu...).`
+    : "";
+}
+
+router.post("/ai/meal-tray", async (req, res): Promise<void> => {
+  const parsed = GenerateMealTrayBody.safeParse(req.body);
+  if (!parsed.success) {
+    req.log.warn({ errors: parsed.error.issues.length }, "Invalid meal tray request");
+    res.status(400).json({ error: "Thông tin gia đình chưa hợp lệ." });
+    return;
+  }
+
+  const { familyProfile, safety, bagIngredients, dateISO } = parsed.data;
+  try {
+    const result = await generateJson([
+      {
+        role: "user",
+        parts: [{
+          text: `Bạn là "Đầu Bếp Vén Khéo & Chuyên Gia Dinh Dưỡng AI" của ứng dụng "30 Phút Yêu Thương".
+
+NHIỆM VỤ CỐT LÕI:
+Dựa trên thông tin cài đặt của gia đình và ngân sách người dùng cung cấp, hãy tạo ra MÂM CƠM 3 MÓN HOÀN CHỈNH (1 Món Đạm - 1 Món Rau/Xào - 1 Món Canh) với tiêu chí: Nấu nhanh ≤ 30 phút, Chuẩn dinh dưỡng y khoa, Đa dạng hương vị và Tối ưu chi phí.
+
+1. TIÊU CHUẨN DINH DƯỠNG & SỨC KHỎE (BẮT BUỘC TUÂN THỦ):
+- Tiêu chuẩn WHO: Kiểm soát muối (<5g/ngày), giảm đường tinh luyện, ưu tiên chế biến thanh nhẹ (hấp, luộc, canh thanh, áp chảo ít dầu).
+- Quy tắc Bàn tay: 1 Lòng bàn tay Đạm (~120-150g/người), 2 Cả bàn tay Chất xơ/Rau củ (~250-300g/người), 1 Nắm tay Tinh bột chậm.
+- Chăm sóc U40 & Nội tiết tố: Ưu tiên nguyên liệu giàu Phytoestrogen và Omega-3 (đậu hũ, nấm, hạt mè, cá, bơ) giúp chống lão hóa và nhẹ bụng.
+- Đảm bảo An toàn Dị ứng: KHÔNG ĐƯỢC chứa bất kỳ nguyên liệu nào nằm trong danh sách dị ứng/kiêng khem của người dùng.
+
+2. KHO ẨM THỰC ĐA DẠNG & PHONG PHÚ:
+Hãy linh hoạt biến tấu mâm cơm theo các phong cách: Truyền Thống 3 Miền Việt Nam (canh sấu thịt bằm, cá bống kho tiêu, canh chua bông điền điển, kho quẹt rau luộc...), Ẩm Thực Lễ/Tết/Mùa Vụ, Món Á Đông Hàn Quốc & Nhật Bản (canh kim chi đậu hũ, thịt xào bulgogi, canh rong biển miso, cá hồi sốt teriyaki...), Món Âu-Mỹ Tinh Gọn (mì Ý sốt cà thịt bằm, salad ức gà sốt mè, súp kem bí đỏ, bò lúc lắc ớt chuông), Món Trend TikTok phiên bản Healthy (ít dầu mỡ, chuẩn dinh dưỡng gia đình).
+
+3. TỰ ĐỘNG HÓA THEO BỐI CẢNH:
+Nếu gia đình có trẻ nhỏ, ưu tiên món mềm, dễ tiêu hóa, cắt thái nhỏ gọn nhưng vẫn kích thích thị giác cho bé.
+
+${familyProfileNote(familyProfile)}${bagIngredientsNote(bagIngredients)}${lunarNote(dateISO)}
+
+${safetyInstructions(safety)}
+
+4. CẤU TRÚC ĐẦU RA (OUTPUT FORMAT - BẮT BUỘC JSON CHUẨN, không thêm lời dẫn, không markdown):
+{
+  "meal_title": "Tên mâm cơm truyền cảm hứng",
+  "total_estimated_cost": 55000,
+  "cooking_time_minutes": 25,
+  "health_benefits_note": "1 câu giải thích lợi ích dinh dưỡng (VD: Chuẩn WHO, giàu phytoestrogen cho U40)",
+  "dishes": [
+    {"category": "Món Đạm", "name": "Tên món đạm hấp dẫn", "portion_hand_rule": "1 lòng bàn tay (~150g)", "ingredients": [{"item": "Tên nguyên liệu", "amount": "150g", "cost": 25000}]},
+    {"category": "Món Rau", "name": "Tên món rau/xào hấp dẫn", "portion_hand_rule": "2 cả bàn tay (~250g)", "ingredients": [{"item": "Tên rau củ", "amount": "250g", "cost": 10000}]},
+    {"category": "Món Canh", "name": "Tên món canh thanh mát", "portion_hand_rule": "1 bát canh thanh", "ingredients": [{"item": "Tên nguyên liệu canh", "amount": "100g", "cost": 8000}]}
+  ],
+  "tags": ["🖐️ Chuẩn Bàn Tay", "🌸 U40 Estrogen", "🇰🇷 Đổi vị Hàn Quốc"]
+}
+total_estimated_cost phải bằng đúng tổng của mọi "cost" trong ingredients (VNĐ nguyên, không thập phân). dishes phải có đúng 3 phần tử, đúng thứ tự Món Đạm, Món Rau, Món Canh. tags gồm 2-4 nhãn ngắn gọn kèm 1 emoji mỗi nhãn.`,
+        }],
+      },
+    ], req);
+    res.json(GenerateMealTrayResponse.parse(result));
+  } catch (error) {
+    req.log.error({ err: error }, "Meal tray generation failed");
+    res.status(502).json({ error: "Mình chưa lên được mâm cơm lúc này. Bạn thử lại sau ít giây nhé." });
   }
 });
 

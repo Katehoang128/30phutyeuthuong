@@ -6,11 +6,18 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './bagIngredientInput';
+export * from './familyProfile';
 export * from './fridgeAnalysisRequest';
 export * from './fridgeAnalysisResponse';
 export * from './fridgeDish';
 export * from './fridgeIngredient';
 export * from './healthStatus';
+export * from './mealTrayDish';
+export * from './mealTrayDishCategory';
+export * from './mealTrayIngredient';
+export * from './mealTrayRequest';
+export * from './mealTrayResponse';
 export * from './nutritionSummary';
 export * from './recipeIngredient';
 export * from './recipeLookupRequest';

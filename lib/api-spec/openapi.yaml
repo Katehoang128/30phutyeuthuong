@@ -70,6 +70,28 @@ paths:
           description: Invalid input
         "502":
           description: AI provider error
+  /ai/meal-tray:
+    post:
+      operationId: generateMealTray
+      tags: [ai]
+      summary: Generate a full 3-dish mâm cơm (Đạm - Rau - Canh) tray for the family
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MealTrayRequest"
+      responses:
+        "200":
+          description: Mâm cơm 3 món with cost, hand-rule portions and health notes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MealTrayResponse"
+        "400":
+          description: Invalid input
+        "502":
+          description: AI provider error
 components:
   schemas:
     HealthStatus:
@@ -231,4 +253,115 @@ components:
         - steps
         - nutrition
         - safetyNotes
+    FamilyProfile:
+      type: object
+      properties:
+        adults:
+          type: integer
+          minimum: 0
+        elderly:
+          type: integer
+          minimum: 0
+        kids:
+          type: integer
+          minimum: 0
+        budgetPerMeal:
+          type: integer
+          minimum: 0
+          description: Ngân sách ước tính cho mâm cơm này, tính bằng VNĐ (tùy chọn)
+      required:
+        - adults
+        - elderly
+        - kids
+    BagIngredientInput:
+      type: object
+      description: Một nguyên liệu người dùng tự nhập ở chế độ Tự Nhập Túi Đồ / Dọn Tủ
+      properties:
+        name:
+          type: string
+        amount:
+          type: string
+      required:
+        - name
+        - amount
+    MealTrayRequest:
+      type: object
+      properties:
+        familyProfile:
+          $ref: "#/components/schemas/FamilyProfile"
+        safety:
+          $ref: "#/components/schemas/SafetyContext"
+        bagIngredients:
+          type: array
+          items:
+            $ref: "#/components/schemas/BagIngredientInput"
+        dateISO:
+          type: string
+          description: Ngày dương lịch hiện tại (YYYY-MM-DD) để tự nhận biết Mùng 1/Rằm âm lịch; mặc định lấy giờ máy chủ nếu bỏ trống
+      required:
+        - familyProfile
+        - safety
+    MealTrayIngredient:
+      type: object
+      properties:
+        item:
+          type: string
+        amount:
+          type: string
+        cost:
+          type: integer
+          minimum: 0
+      required:
+        - item
+        - amount
+        - cost
+    MealTrayDish:
+      type: object
+      properties:
+        category:
+          type: string
+          enum: ["Món Đạm", "Món Rau", "Món Canh"]
+        name:
+          type: string
+        portion_hand_rule:
+          type: string
+        ingredients:
+          type: array
+          items:
+            $ref: "#/components/schemas/MealTrayIngredient"
+      required:
+        - category
+        - name
+        - portion_hand_rule
+        - ingredients
+    MealTrayResponse:
+      type: object
+      properties:
+        meal_title:
+          type: string
+        total_estimated_cost:
+          type: integer
+          minimum: 0
+        cooking_time_minutes:
+          type: integer
+          minimum: 0
+        health_benefits_note:
+          type: string
+        dishes:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            $ref: "#/components/schemas/MealTrayDish"
+        tags:
+          type: array
+          items:
+            type: string
+      required:
+        - meal_title
+        - total_estimated_cost
+        - cooking_time_minutes
+        - health_benefits_note
+        - dishes
+        - tags
 

@@ -111,3 +111,67 @@ export const LookupRecipeResponse = zod.object({
 })
 
 
+/**
+ * @summary Generate a full 3-dish mâm cơm (Đạm - Rau - Canh) tray for the family
+ */
+export const generateMealTrayBodyFamilyProfileAdultsMin = 0;
+
+export const generateMealTrayBodyFamilyProfileElderlyMin = 0;
+
+export const generateMealTrayBodyFamilyProfileKidsMin = 0;
+
+export const generateMealTrayBodyFamilyProfileBudgetPerMealMin = 0;
+
+export const generateMealTrayBodySafetyKidsMin = 0;
+
+
+
+export const GenerateMealTrayBody = zod.object({
+  "familyProfile": zod.object({
+  "adults": zod.number().int().min(generateMealTrayBodyFamilyProfileAdultsMin),
+  "elderly": zod.number().int().min(generateMealTrayBodyFamilyProfileElderlyMin),
+  "kids": zod.number().int().min(generateMealTrayBodyFamilyProfileKidsMin),
+  "budgetPerMeal": zod.number().int().min(generateMealTrayBodyFamilyProfileBudgetPerMealMin).optional().describe('Ngân sách ước tính cho mâm cơm này, tính bằng VNĐ (tùy chọn)')
+}),
+  "safety": zod.object({
+  "kids": zod.number().int().min(generateMealTrayBodySafetyKidsMin),
+  "allergies": zod.array(zod.string()),
+  "allergyOther": zod.string()
+}),
+  "bagIngredients": zod.array(zod.object({
+  "name": zod.string(),
+  "amount": zod.string()
+}).describe('Một nguyên liệu người dùng tự nhập ở chế độ Tự Nhập Túi Đồ / Dọn Tủ')).optional(),
+  "dateISO": zod.string().optional().describe('Ngày dương lịch hiện tại (YYYY-MM-DD) để tự nhận biết Mùng 1/Rằm âm lịch; mặc định lấy giờ máy chủ nếu bỏ trống')
+})
+
+export const generateMealTrayResponseTotalEstimatedCostMin = 0;
+
+export const generateMealTrayResponseCookingTimeMinutesMin = 0;
+
+export const generateMealTrayResponseDishesItemIngredientsItemCostMin = 0;
+
+export const generateMealTrayResponseDishesMin = 3;
+export const generateMealTrayResponseDishesMax = 3;
+
+
+
+export const GenerateMealTrayResponse = zod.object({
+  "meal_title": zod.string(),
+  "total_estimated_cost": zod.number().int().min(generateMealTrayResponseTotalEstimatedCostMin),
+  "cooking_time_minutes": zod.number().int().min(generateMealTrayResponseCookingTimeMinutesMin),
+  "health_benefits_note": zod.string(),
+  "dishes": zod.array(zod.object({
+  "category": zod.enum(['Món Đạm', 'Món Rau', 'Món Canh']),
+  "name": zod.string(),
+  "portion_hand_rule": zod.string(),
+  "ingredients": zod.array(zod.object({
+  "item": zod.string(),
+  "amount": zod.string(),
+  "cost": zod.number().int().min(generateMealTrayResponseDishesItemIngredientsItemCostMin)
+}))
+})).min(generateMealTrayResponseDishesMin).max(generateMealTrayResponseDishesMax),
+  "tags": zod.array(zod.string())
+})
+
+

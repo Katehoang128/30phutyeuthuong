@@ -23,6 +23,8 @@ import type {
   FridgeAnalysisRequest,
   FridgeAnalysisResponse,
   HealthStatus,
+  MealTrayRequest,
+  MealTrayResponse,
   RecipeLookupRequest,
   RecipeLookupResponse
 } from './api.schemas';
@@ -306,5 +308,93 @@ export const useLookupRecipe = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getLookupRecipeMutationOptions(options));
+    }
+
+export const getGenerateMealTrayUrl = () => {
+
+
+
+
+  return `/api/ai/meal-tray`
+}
+
+/**
+ * @summary Generate a full 3-dish mâm cơm (Đạm - Rau - Canh) tray for the family
+ */
+export const generateMealTray = async (mealTrayRequest: MealTrayRequest, options?: Parameters<typeof customFetch>[1]): Promise<MealTrayResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<MealTrayResponse>(getGenerateMealTrayUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(mealTrayRequest)
+  }
+);}
+
+
+
+
+
+export const getGenerateMealTrayMutationKey = () => ['generateMealTray'] as const;
+
+export const getGenerateMealTrayMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateMealTray>>, TError,GenerateMealTrayMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof generateMealTray>>, TError,GenerateMealTrayMutationVariables, TContext> => {
+
+const mutationKey = getGenerateMealTrayMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof generateMealTray>>, GenerateMealTrayMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  generateMealTray(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GenerateMealTrayMutationResult = NonNullable<Awaited<ReturnType<typeof generateMealTray>>>
+    export type GenerateMealTrayMutationBody = BodyType<MealTrayRequest>
+    export type GenerateMealTrayMutationError = ErrorType<void>
+    export type GenerateMealTrayMutationVariables = {data: BodyType<MealTrayRequest>}
+
+    /**
+ * @summary Generate a full 3-dish mâm cơm (Đạm - Rau - Canh) tray for the family
+ */
+export const useGenerateMealTray = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateMealTray>>, TError,GenerateMealTrayMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof generateMealTray>>,
+        TError,
+        GenerateMealTrayMutationVariables,
+        TContext
+      > => {
+      return useMutation(getGenerateMealTrayMutationOptions(options));
     }
 

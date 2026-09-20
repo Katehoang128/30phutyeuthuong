@@ -80,3 +80,71 @@ export interface RecipeLookupResponse {
   safetyNotes: string[];
 }
 
+export interface FamilyProfile {
+  /** @minimum 0 */
+  adults: number;
+  /** @minimum 0 */
+  elderly: number;
+  /** @minimum 0 */
+  kids: number;
+  /**
+     * Ngân sách ước tính cho mâm cơm này, tính bằng VNĐ (tùy chọn)
+     * @minimum 0
+     */
+  budgetPerMeal?: number;
+}
+
+/**
+ * Một nguyên liệu người dùng tự nhập ở chế độ Tự Nhập Túi Đồ / Dọn Tủ
+ */
+export interface BagIngredientInput {
+  name: string;
+  amount: string;
+}
+
+export interface MealTrayRequest {
+  familyProfile: FamilyProfile;
+  safety: SafetyContext;
+  bagIngredients?: BagIngredientInput[];
+  /** Ngày dương lịch hiện tại (YYYY-MM-DD) để tự nhận biết Mùng 1/Rằm âm lịch; mặc định lấy giờ máy chủ nếu bỏ trống */
+  dateISO?: string;
+}
+
+export interface MealTrayIngredient {
+  item: string;
+  amount: string;
+  /** @minimum 0 */
+  cost: number;
+}
+
+export type MealTrayDishCategory = typeof MealTrayDishCategory[keyof typeof MealTrayDishCategory];
+
+
+export const MealTrayDishCategory = {
+  Món_Đạm: 'Món Đạm',
+  Món_Rau: 'Món Rau',
+  Món_Canh: 'Món Canh',
+} as const;
+
+export interface MealTrayDish {
+  category: MealTrayDishCategory;
+  name: string;
+  portion_hand_rule: string;
+  ingredients: MealTrayIngredient[];
+}
+
+export interface MealTrayResponse {
+  meal_title: string;
+  /** @minimum 0 */
+  total_estimated_cost: number;
+  /** @minimum 0 */
+  cooking_time_minutes: number;
+  health_benefits_note: string;
+  /**
+     * @minItems 3
+     * @maxItems 3
+     */
+  dishes: MealTrayDish[];
+  tags: string[];
+}
+
