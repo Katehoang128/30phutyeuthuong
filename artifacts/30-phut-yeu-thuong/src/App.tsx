@@ -1332,7 +1332,7 @@ const WEEKLY_MENU_TIPS = [
 // Export Menu Infographic: renders a fixed-width (720px) table off-screen — real screen width doesn't
 // matter here, html2canvas captures whatever DOM box it's pointed at, so a design-time width tuned for
 // sharing on Zalo/FB beats trying to match whatever viewport the visitor happens to be on.
-function WeeklyMenuExportCard({ plan, prefs, isPro }: { plan: DayPlan[]; prefs: Preferences; isPro: boolean }) {
+function WeeklyMenuExportCard({ plan, prefs, isPro, totalCost }: { plan: DayPlan[]; prefs: Preferences; isPro: boolean; totalCost: number }) {
   const infographicRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
@@ -1340,6 +1340,11 @@ function WeeklyMenuExportCard({ plan, prefs, isPro }: { plan: DayPlan[]; prefs: 
   const headcount = prefs.adults + prefs.elderly + prefs.kids;
   const isFullWeek = plan.length >= 7;
   const tip = WEEKLY_MENU_TIPS[Number(isoWeekKey().split('-W')[1] || 0) % WEEKLY_MENU_TIPS.length];
+  // plan[0] is always today (rotatePlanToToday), not necessarily a Monday, so the date range reflects
+  // the actual rolling window being rendered (and the free-tier 3-ngày slice) rather than assuming Mon-Sun.
+  const rangeStart = vietnamTodayDate();
+  const rangeEnd = addDays(rangeStart, Math.max(0, plan.length - 1));
+  const dateRangeLabel = `${formatDayMonth(rangeStart, true)} - ${formatDayMonth(rangeEnd, true)}`;
 
   useEffect(() => {
     let active = true;
@@ -1389,6 +1394,7 @@ function WeeklyMenuExportCard({ plan, prefs, isPro }: { plan: DayPlan[]; prefs: 
       <div ref={infographicRef} className="menu-infographic">
         <div className="menu-infographic-brand"><span className="menu-infographic-logo">🍲</span><span>30 Phút Yêu Thương</span></div>
         <h1 className="menu-infographic-title">THỰC ĐƠN BỮA CƠM {isFullWeek ? 'CẢ TUẦN' : `${plan.length} NGÀY`}<br />CHO GIA ĐÌNH {headcount} NGƯỜI</h1>
+        <div className="menu-infographic-meta"><span>🗓️ {dateRangeLabel}</span><span>💰 Dự toán tuần: {money(totalCost)}</span></div>
         <div className="menu-infographic-table">
           <div className="menu-infographic-row menu-infographic-head"><span>Thứ</span><span>🍖 Món Mặn</span><span>🥬 Món Xào</span><span>🍲 Món Canh</span><span>🌅 Bữa Sáng</span></div>
           {plan.map((day) => {
@@ -1409,6 +1415,7 @@ function WeeklyMenuExportCard({ plan, prefs, isPro }: { plan: DayPlan[]; prefs: 
           <p className="menu-infographic-tip">💡 Mẹo: {tip}</p>
           <div className="menu-infographic-qr">{qrDataUrl && <img src={qrDataUrl} alt="QR Group Zalo" width={64} height={64} />}<span>Quét mã tham gia<br />Group Zalo Kín</span></div>
         </div>
+        <div className="menu-infographic-signature"><span className="menu-infographic-logo menu-infographic-logo-sm">🍲</span><div><strong>30 Phút Yêu Thương</strong><span>Nấu nhanh một chút, thương nhau nhiều hơn.</span></div></div>
       </div>
     </div>
   </section>;
@@ -1425,7 +1432,7 @@ function HomePage({ plan, isPro, onUpgrade, prefs, settingsOpen, setSettingsOpen
     {settingsOpen && <SettingsModal prefs={prefs} setOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} />}
     <div className="hidden md:block"><MindfulKitchenMessage /></div>
     <ZeroScrollMealPlanner plan={visiblePlan} prefs={prefs} favorites={favoriteDishes} setFavorites={setFavoriteDishes} onSwap={onSwapDish} />
-    <WeeklyMenuExportCard plan={visiblePlan} prefs={prefs} isPro={isPro} />
+    <WeeklyMenuExportCard plan={visiblePlan} prefs={prefs} isPro={isPro} totalCost={totalCost} />
     <button type="button" onClick={() => setSettingsOpen(true)} className="settings-launch tactile flex w-full items-center justify-between rounded-2xl border bg-card px-4 py-3 text-left shadow-sm" data-testid="button-toggle-settings"><span className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><SlidersHorizontal size={17} /></span><span><span className="block text-sm font-bold">Thiết lập nhà mình</span><span className="block text-xs text-muted-foreground">{prefs.kids} trẻ nhỏ · {prefs.elderly} người già · {prefs.adults} người lớn</span></span></span><ChevronDown size={18} className="text-muted-foreground" /></button>
     <section className="hidden">
       <div className="min-w-0 space-y-4"><div className="flex items-end justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-primary">{isPro ? 'Trọn tuần' : 'Gói miễn phí · 3 ngày đầu'}</p><h2 className="display-font mt-1 text-3xl font-bold tracking-tight">Mình ăn gì nhỉ?</h2></div><button onClick={regenerate} className="tactile inline-flex items-center gap-2 rounded-full border border-primary/30 bg-card px-3.5 py-2 text-xs font-bold text-primary" data-testid="button-regenerate"><RefreshCw size={14} /> Đổi tuần khác</button></div><div className="flex max-w-full gap-2 overflow-x-auto pb-1" role="tablist">{[['all','Tất cả'],['breakfast','Bữa sáng'],['lunch','Bữa trưa'],['dinner','Bữa tối']].filter(([value]) => value === 'all' || prefs.selectedMeals[value as keyof Preferences['selectedMeals']]).map(([value,label]) => <button key={value} onClick={() => setActiveMeal(value as typeof activeMeal)} className={`whitespace-nowrap rounded-full px-4 py-2 text-xs font-bold transition-colors ${activeMeal === value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}`} data-testid={`button-filter-${value}`}>{label}</button>)}</div><BudgetWarning plan={plan} units={units} p={prefs} totalCost={totalCost} forceBudget={forceBudget} />{budgetNotice && <p className="rounded-xl border border-amber-400/40 bg-amber-50 p-3 text-xs font-bold leading-5 text-amber-800" role="status" data-testid="budget-infeasible-notice">{budgetNotice}</p>}{swapNotice && <p className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs font-bold leading-5 text-foreground" role="status" data-testid="status-dish-swap">{swapNotice}</p>}{visiblePlan.map((day, index) => <DayCard key={day.day} day={day} index={index} open={expandedDay === index} setOpen={() => setExpandedDay(expandedDay === index ? -1 : index)} activeMeal={activeMeal} favorites={favoriteDishes} setFavorites={setFavoriteDishes} prefs={prefs} onSwap={(slot) => onSwapDish(index, slot)} />)}{!isPro && <LockedWeekBanner onUpgrade={onUpgrade} />}</div>
