@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Link, Router as WouterRouter, useLocation } from 'wouter';
-import { AlertCircle, ArrowUpRight, BadgeCheck, BookOpen, CalendarDays, Camera, Check, ChefHat, ChevronDown, ChevronUp, CircleHelp, Clock3, Copy, Crown, ExternalLink, Heart, ImagePlus, Leaf, LoaderCircle, LockKeyhole, Mail, MessageCircle, Minus, Plus, Printer, QrCode, RefreshCw, Search, Send, Share2, ShoppingBasket, SlidersHorizontal, Smartphone, Sparkles, Trash2, Upload, Users, Utensils, WalletCards, X , Menu, User, Settings, ArrowRight } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, BadgeCheck, BookOpen, CalendarDays, Camera, Check, ChefHat, ChevronDown, ChevronUp, CircleHelp, Clock3, Copy, Crown, Download, ExternalLink, Heart, ImagePlus, Leaf, LoaderCircle, LockKeyhole, Mail, MessageCircle, Minus, Plus, Printer, QrCode, RefreshCw, Search, Send, Share2, ShoppingBasket, SlidersHorizontal, Smartphone, Sparkles, Trash2, Upload, Users, Utensils, WalletCards, X , Menu, User, Settings, ArrowRight } from 'lucide-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { trackEvent } from './analytics';
+// html2canvas/qrcode are only needed by WeeklyMenuExportCard and are large (~230KB gz combined), so
+// they're dynamically import()'d there instead of statically here, keeping them out of the main bundle
+// for the many visitors who never tap "Xuất ảnh thực đơn".
 import { BREAKFAST, CANH, DAM, DAILY_TARGET, DAY_NAMES, Dish, NUTRITION_PER_100G, PANTRY_COST, PRICE, RAU, RICE_PER_UNIT, SHOPPING_AFFILIATE_LINKS } from './data';
 
 const queryClient = new QueryClient();
@@ -575,6 +578,7 @@ function getCategory(name: string) {
   return 'Rau, củ & gia vị';
 }
 const BACH_HOA_XANH_AFFILIATE_URL = 'https://www.bachhoaxanh.com/khuyen-mai/gian-hang-affiliate-ct5001239?kol=9163HOANGTHICUC&utm_campaign=affiliate&utm_content=9163HOANGTHICUC';
+const ZALO_GROUP_URL = 'https://zalo.me/g/2obzl3fbbbaienldhm7m';
 const DRY_ITEMS = ['Gạo','Bún','Bánh','Mì','Yến mạch','Đậu xanh','Tôm khô','Nước mắm','Muối','Tiêu','Dầu ăn','Dầu ô liu'];
 function shoppingGroup(name: string): 'fresh' | 'dry' {
   return DRY_ITEMS.some((item) => name.includes(item)) ? 'dry' : 'fresh';
@@ -1318,6 +1322,98 @@ function StreakWidget({ streak, isCheckedToday, onCheck, monthlySavings, reminde
   </section>;
 }
 
+const WEEKLY_MENU_TIPS = [
+  'Sơ chế rau củ ngay sau khi đi chợ để bữa nào cũng nhanh gọn.',
+  'Ưu tiên rau củ theo mùa để tươi ngon và tiết kiệm hơn.',
+  'Gộp nguyên liệu giống nhau giữa các món để chỉ cần đi chợ 1 lần.',
+  'Đổi 1-2 bữa đạm đắt tiền sang đậu hũ, trứng để nhẹ ví hơn.',
+];
+
+// Export Menu Infographic: renders a fixed-width (720px) table off-screen — real screen width doesn't
+// matter here, html2canvas captures whatever DOM box it's pointed at, so a design-time width tuned for
+// sharing on Zalo/FB beats trying to match whatever viewport the visitor happens to be on.
+function WeeklyMenuExportCard({ plan, prefs, isPro }: { plan: DayPlan[]; prefs: Preferences; isPro: boolean }) {
+  const infographicRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+  const [qrDataUrl, setQrDataUrl] = useState('');
+  const headcount = prefs.adults + prefs.elderly + prefs.kids;
+  const isFullWeek = plan.length >= 7;
+  const tip = WEEKLY_MENU_TIPS[Number(isoWeekKey().split('-W')[1] || 0) % WEEKLY_MENU_TIPS.length];
+
+  useEffect(() => {
+    let active = true;
+    import('qrcode')
+      .then((mod) => mod.default.toDataURL(ZALO_GROUP_URL, { width: 168, margin: 1, color: { dark: '#2D5A27', light: '#FFFFFF' } }))
+      .then((url) => { if (active) setQrDataUrl(url); })
+      .catch(() => { if (active) setQrDataUrl(''); });
+    return () => { active = false; };
+  }, []);
+
+  const exportImage = async () => {
+    const node = infographicRef.current;
+    if (!node || exporting) return;
+    setExporting(true);
+    setExportError('');
+    trackEvent('menu_infographic_export_started', { days: plan.length });
+    try {
+      const { default: html2canvas } = await import('html2canvas');
+      if (document.fonts?.ready) await document.fonts.ready;
+      const canvas = await html2canvas(node, { scale: 2, backgroundColor: '#FAF9F5', useCORS: true, logging: false });
+      const dataUrl = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = 'thuc-don-tuan-30-phut-yeu-thuong.png';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      trackEvent('menu_infographic_exported', { days: plan.length });
+    } catch {
+      setExportError('Chưa tạo được ảnh lúc này. Bạn thử lại nhé.');
+      trackEvent('menu_infographic_export_failed', {});
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return <section className="paper-card !mb-2 menu-export-card" data-testid="card-menu-export">
+    <div className="flex items-center gap-3">
+      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-secondary text-secondary-foreground"><Camera size={20} /></span>
+      <div className="min-w-0 flex-1"><h2 className="text-sm font-bold">📸 Xuất Ảnh Thực Đơn Tuần</h2><p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">Tải ảnh đẹp để lưu hoặc chia sẻ lên Zalo, Facebook cho cả nhà xem.</p></div>
+    </div>
+    <button type="button" onClick={exportImage} disabled={exporting} className="warm-cta tactile mt-3 flex w-full items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-70" data-testid="button-export-menu-image">{exporting ? <LoaderCircle size={16} className="animate-spin" /> : <Download size={16} />} {exporting ? 'Đang tạo ảnh...' : '📸 Tải Ảnh Thực Đơn Về Điện Thoại'}</button>
+    {exportError && <p className="mt-2 text-[11px] font-bold text-destructive" data-testid="text-export-error">⚠️ {exportError}</p>}
+    {!isPro && !isFullWeek && <p className="mt-2 text-[10px] leading-4 text-muted-foreground">Ảnh đang xuất {plan.length} ngày đã mở khoá. Nâng cấp Pro để xuất trọn 7 ngày.</p>}
+
+    <div className="menu-infographic-offscreen" aria-hidden="true">
+      <div ref={infographicRef} className="menu-infographic">
+        <div className="menu-infographic-brand"><span className="menu-infographic-logo">🍲</span><span>30 Phút Yêu Thương</span></div>
+        <h1 className="menu-infographic-title">THỰC ĐƠN BỮA CƠM {isFullWeek ? 'CẢ TUẦN' : `${plan.length} NGÀY`}<br />CHO GIA ĐÌNH {headcount} NGƯỜI</h1>
+        <div className="menu-infographic-table">
+          <div className="menu-infographic-row menu-infographic-head"><span>Thứ</span><span>🍖 Món Mặn</span><span>🥬 Món Xào</span><span>🍲 Món Canh</span><span>🌅 Bữa Sáng</span></div>
+          {plan.map((day) => {
+            const damThumb = dishThumb(day.dinner.dam);
+            const rauThumb = dishThumb(day.dinner.rau);
+            const canhThumb = dishThumb(day.dinner.canh);
+            const breakfastThumb = dishThumb(day.breakfast);
+            return <div key={day.day} className="menu-infographic-row">
+              <span className="menu-infographic-day">{day.day}</span>
+              <span className="menu-infographic-cell"><span className="menu-infographic-thumb" style={{ background: damThumb.bg }}>{damThumb.emoji}</span><span>{day.dinner.dam.name}</span></span>
+              <span className="menu-infographic-cell"><span className="menu-infographic-thumb" style={{ background: rauThumb.bg }}>{rauThumb.emoji}</span><span>{day.dinner.rau.name}</span></span>
+              <span className="menu-infographic-cell"><span className="menu-infographic-thumb" style={{ background: canhThumb.bg }}>{canhThumb.emoji}</span><span>{day.dinner.canh.name}</span></span>
+              <span className="menu-infographic-cell"><span className="menu-infographic-thumb" style={{ background: breakfastThumb.bg }}>{breakfastThumb.emoji}</span><span>{day.breakfast.name}</span></span>
+            </div>;
+          })}
+        </div>
+        <div className="menu-infographic-footer">
+          <p className="menu-infographic-tip">💡 Mẹo: {tip}</p>
+          <div className="menu-infographic-qr">{qrDataUrl && <img src={qrDataUrl} alt="QR Group Zalo" width={64} height={64} />}<span>Quét mã tham gia<br />Group Zalo Kín</span></div>
+        </div>
+      </div>
+    </div>
+  </section>;
+}
+
 function HomePage({ plan, isPro, onUpgrade, prefs, settingsOpen, setSettingsOpen, updatePrefs, saveSettings, regenerate, expandedDay, setExpandedDay, activeMeal, setActiveMeal, favoriteDishes, setFavoriteDishes, totalCost, forceBudget, budgetNotice, swapNotice, onSwapDish, spendLog, streak, isMealCheckedToday, onCheckTodayMeal, monthlySavings, reminderEnabled, onEnableReminder, onDisableReminder }: { plan: DayPlan[]; isPro: boolean; onUpgrade: () => void; prefs: Preferences; settingsOpen: boolean; setSettingsOpen: (value: boolean) => void; updatePrefs: (value: Partial<Preferences>) => void; saveSettings: () => void; regenerate: () => void; expandedDay: number; setExpandedDay: (value: number) => void; activeMeal: 'all' | 'breakfast' | 'lunch' | 'dinner'; setActiveMeal: (value: 'all' | 'breakfast' | 'lunch' | 'dinner') => void; favoriteDishes: Set<string>; setFavoriteDishes: (value: Set<string>) => void; totalCost: number; forceBudget: () => void; budgetNotice: string; swapNotice: string; onSwapDish: (dayIndex: number, slot: DishSlot) => void; spendLog: SpendRecord[]; streak: StreakData; isMealCheckedToday: boolean; onCheckTodayMeal: () => void; monthlySavings: number; reminderEnabled: boolean; onEnableReminder: () => void; onDisableReminder: () => void }) {
   const today = plan[0];
   const visiblePlan = isPro ? plan : plan.slice(0, FREE_DAY_LIMIT);
@@ -1329,6 +1425,7 @@ function HomePage({ plan, isPro, onUpgrade, prefs, settingsOpen, setSettingsOpen
     {settingsOpen && <SettingsModal prefs={prefs} setOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} />}
     <div className="hidden md:block"><MindfulKitchenMessage /></div>
     <ZeroScrollMealPlanner plan={visiblePlan} prefs={prefs} favorites={favoriteDishes} setFavorites={setFavoriteDishes} onSwap={onSwapDish} />
+    <WeeklyMenuExportCard plan={visiblePlan} prefs={prefs} isPro={isPro} />
     <button type="button" onClick={() => setSettingsOpen(true)} className="settings-launch tactile flex w-full items-center justify-between rounded-2xl border bg-card px-4 py-3 text-left shadow-sm" data-testid="button-toggle-settings"><span className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><SlidersHorizontal size={17} /></span><span><span className="block text-sm font-bold">Thiết lập nhà mình</span><span className="block text-xs text-muted-foreground">{prefs.kids} trẻ nhỏ · {prefs.elderly} người già · {prefs.adults} người lớn</span></span></span><ChevronDown size={18} className="text-muted-foreground" /></button>
     <section className="hidden">
       <div className="min-w-0 space-y-4"><div className="flex items-end justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-primary">{isPro ? 'Trọn tuần' : 'Gói miễn phí · 3 ngày đầu'}</p><h2 className="display-font mt-1 text-3xl font-bold tracking-tight">Mình ăn gì nhỉ?</h2></div><button onClick={regenerate} className="tactile inline-flex items-center gap-2 rounded-full border border-primary/30 bg-card px-3.5 py-2 text-xs font-bold text-primary" data-testid="button-regenerate"><RefreshCw size={14} /> Đổi tuần khác</button></div><div className="flex max-w-full gap-2 overflow-x-auto pb-1" role="tablist">{[['all','Tất cả'],['breakfast','Bữa sáng'],['lunch','Bữa trưa'],['dinner','Bữa tối']].filter(([value]) => value === 'all' || prefs.selectedMeals[value as keyof Preferences['selectedMeals']]).map(([value,label]) => <button key={value} onClick={() => setActiveMeal(value as typeof activeMeal)} className={`whitespace-nowrap rounded-full px-4 py-2 text-xs font-bold transition-colors ${activeMeal === value ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}`} data-testid={`button-filter-${value}`}>{label}</button>)}</div><BudgetWarning plan={plan} units={units} p={prefs} totalCost={totalCost} forceBudget={forceBudget} />{budgetNotice && <p className="rounded-xl border border-amber-400/40 bg-amber-50 p-3 text-xs font-bold leading-5 text-amber-800" role="status" data-testid="budget-infeasible-notice">{budgetNotice}</p>}{swapNotice && <p className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs font-bold leading-5 text-foreground" role="status" data-testid="status-dish-swap">{swapNotice}</p>}{visiblePlan.map((day, index) => <DayCard key={day.day} day={day} index={index} open={expandedDay === index} setOpen={() => setExpandedDay(expandedDay === index ? -1 : index)} activeMeal={activeMeal} favorites={favoriteDishes} setFavorites={setFavoriteDishes} prefs={prefs} onSwap={(slot) => onSwapDish(index, slot)} />)}{!isPro && <LockedWeekBanner onUpgrade={onUpgrade} />}</div>
@@ -2120,7 +2217,7 @@ function MobileDrawer({ open, onClose, isPro, phone, onUpgrade, onOpenSettings }
             )}
             
             <a
-              href="https://zalo.me/g/2obzl3fbbbaienldhm7m"
+              href={ZALO_GROUP_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="flex min-h-[44px] w-full items-center justify-between rounded-xl p-3 hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
