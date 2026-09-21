@@ -611,12 +611,6 @@ function dailyFreshIngredients(dishes: { dish: Dish; slot: DishSlot }[], units: 
   }));
   return Object.entries(totals).map(([name, value]) => ({ name, ...value }));
 }
-function quantityEditorUnit(value: { qty: number; unit?: string }) {
-  return value.unit || 'g';
-}
-function quantityEditorValue(value: { qty: number; unit?: string }) {
-  return Number.isInteger(value.qty) ? value.qty : Number(value.qty.toFixed(1));
-}
 
 type BagItem = { id: string; name: string; qty: number; unit: 'g' | 'kg'; pricePerKg: number; group: 'dam' | 'rau' };
 const BAG_QUICK_CHIPS: { label: string; emoji: string; group: 'dam' | 'rau' }[] = [
@@ -1064,7 +1058,7 @@ function Shell() {
   }, [plan, units, prefs, bought]);
 
   let page;
-  if (location === '/shopping') page = <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} setQuantityOverrides={setQuantityOverrides} targetBudget={prefs.targetBudget || 1200000} prefs={prefs} spendLog={spendLog} onRecordSpend={recordActualSpend} isPro={isPro} onUpgrade={() => openUpgrade('meal_pairing_ai')} />;
+  if (location === '/shopping') page = <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} targetBudget={prefs.targetBudget || 1200000} prefs={prefs} spendLog={spendLog} onRecordSpend={recordActualSpend} isPro={isPro} onUpgrade={() => openUpgrade('meal_pairing_ai')} />;
   else if (location === '/costs') page = <div className="space-y-5"><CostsPage shopping={shopping} prefs={prefs} totalCost={totalCost} plan={accessiblePlan} spendLog={spendLog} /><KitchenEquityCard weeklySaving={Math.max(0, (prefs.targetBudget || 1200000) - totalCost)} /></div>;
   else if (location === '/ask-ai') page = <AskAiPageV2 prefs={prefs} isPro={isPro} onUpgrade={() => openUpgrade('ai_limit')} />;
   else page = <HomePage plan={plan} isPro={isPro} onUpgrade={() => openUpgrade('locked_week')} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} totalCost={totalCost} forceBudget={forceBudget} budgetNotice={budgetNotice} swapNotice={swapNotice} onSwapDish={swapDish} spendLog={spendLog} streak={streak} isMealCheckedToday={isMealCheckedToday} onCheckTodayMeal={checkTodayMeal} monthlySavings={monthlySavings} reminderEnabled={reminderEnabled} onEnableReminder={enableReminder} onDisableReminder={disableReminder} />;
@@ -1754,7 +1748,7 @@ function ShoppingPage({ shopping, bought, setBought, customItems, setCustomItems
 }
 function ShoppingGroup({ category, items, bought, toggle }: { category: string; items: [string, { qty: number; unit?: string }][]; bought: Set<string>; toggle: (name: string) => void }) { return <section className="paper-card overflow-hidden"><div className="flex items-center justify-between border-b bg-muted/45 px-4 py-3"><h2 className="text-sm font-bold">{category}</h2><span className="rounded-full bg-card px-2.5 py-1 text-[10px] font-bold text-muted-foreground">{items.length} món</span></div><div className="divide-y">{items.map(([name, value]) => { const done = bought.has(name); return <div key={name} className={`flex items-center justify-between gap-3 px-4 py-3.5 transition-opacity ${done ? 'opacity-45' : ''}`}><button onClick={() => toggle(name)} className="flex min-w-0 items-center gap-3 text-left" data-testid={`button-bought-${name}`}><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${done ? 'border-[hsl(113_40%_45%)] bg-[hsl(113_40%_45%)] text-white' : 'border-[hsl(37_43%_74%)] bg-card'}`}>{done && <Check size={14} strokeWidth={3} />}</span><span className={`text-sm font-semibold ${done ? 'line-through' : ''}`}>{name}</span></button><span className="shrink-0 text-xs font-bold text-muted-foreground">{displayQuantity(value)}</span></div>; })}</div></section>; }
 
-function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomItems, totalCost, setQuantityOverrides, targetBudget, prefs, spendLog, onRecordSpend, isPro, onUpgrade }: { shopping: Aggregate; bought: Set<string>; setBought: (value: Set<string>) => void; customItems: { name: string; bought: boolean }[]; setCustomItems: (value: { name: string; bought: boolean }[]) => void; totalCost: number; setQuantityOverrides: (value: Record<string, number> | ((current: Record<string, number>) => Record<string, number>)) => void; targetBudget: number; prefs: Preferences; spendLog: SpendRecord[]; onRecordSpend: (actual: number) => void; isPro: boolean; onUpgrade: () => void }) {
+function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomItems, totalCost, targetBudget, prefs, spendLog, onRecordSpend, isPro, onUpgrade }: { shopping: Aggregate; bought: Set<string>; setBought: (value: Set<string>) => void; customItems: { name: string; bought: boolean }[]; setCustomItems: (value: { name: string; bought: boolean }[]) => void; totalCost: number; targetBudget: number; prefs: Preferences; spendLog: SpendRecord[]; onRecordSpend: (actual: number) => void; isPro: boolean; onUpgrade: () => void }) {
   const [mode, setMode] = useState<'ai' | 'custom'>('ai');
   const [newItem, setNewItem] = useState('');
   const [copied, setCopied] = useState(false);
@@ -1766,23 +1760,18 @@ function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomIte
     next.has(name) ? next.delete(name) : next.add(name);
     setBought(next);
   };
-  const updateQuantity = (name: string, value: string) => {
-    const qty = Number(value);
-    if (!Number.isFinite(qty) || qty < 0) return;
-    setQuantityOverrides((current) => ({ ...current, [name]: qty }));
-  };
   const add = () => {
     if (newItem.trim()) {
       setCustomItems([...customItems, { name: newItem.trim(), bought: false }]);
       setNewItem('');
     }
   };
-  const copyShoppingList = async () => {
+  const buildShoppingListText = () => {
     const formatItems = (title: string, items: [string, { qty: number; unit?: string }][]) => [
       `\n${title}`,
       ...items.map(([name, value]) => `${bought.has(name) ? '✅' : '⬜'} ${name}: ${displayQuantity(value)}${bought.has(name) ? ' (nhà đã có sẵn)' : ''}`),
     ];
-    const text = [
+    return [
       '🛒 DANH SÁCH ĐI CHỢ - 30 PHÚT YÊU THƯƠNG',
       ...formatItems('THỰC PHẨM TƯƠI SỐNG', freshItems),
       ...formatItems('ĐỒ KHÔ & GIA VỊ', dryItems),
@@ -1790,19 +1779,24 @@ function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomIte
       `\nƯớc tính còn cần chi: ${money(totalCost)}`,
       `Mở ứng dụng: ${new URL('/', window.location.href).href}`,
     ].join('\n');
+  };
+  const copyTextToClipboard = async (text: string) => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    textarea.remove();
+  };
+  const copyShoppingList = async () => {
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        textarea.remove();
-      }
+      await copyTextToClipboard(buildShoppingListText());
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2200);
     } catch {
@@ -1815,26 +1809,31 @@ function ShoppingPageV2({ shopping, bought, setBought, customItems, setCustomIte
   const remainingBudget = Math.max(0, targetBudget - totalCost);
   return <div className="space-y-5 pb-5">
     <section className="shopping-page-header">
-      <div className="shopping-title-row"><div><p className="text-[10px] font-bold uppercase tracking-[.15em] text-primary">Đi chợ</p><h1 className="shopping-page-title">Túi đi chợ tuần này</h1></div>
-      {mode === 'ai' && <div className="flex flex-wrap gap-2">
-        <button onClick={copyShoppingList} className="shopping-action warm-cta tactile inline-flex items-center justify-center gap-1.5" data-testid="button-share-zalo">{copied ? <Check size={14} /> : <Share2 size={14} />}{copied ? 'Đã copy' : '📱 Gửi Zalo'}</button>
-        <button onClick={() => window.print()} className="shopping-action tactile inline-flex items-center gap-1.5 rounded-full border border-[hsl(34_31%_90%)] bg-white font-bold shadow-sm" data-testid="button-print-shopping"><Printer size={14} /> In</button>
-      </div>}</div>
+      <div className="shopping-title-row"><div><p className="text-[10px] font-bold uppercase tracking-[.15em] text-primary">Đi chợ</p><h1 className="shopping-page-title">Túi đi chợ tuần này</h1></div></div>
       <div className="mt-3 flex rounded-xl bg-muted p-1" role="tablist" aria-label="Chọn chế độ đi chợ">
         <button type="button" onClick={() => setMode('ai')} className={`flex min-h-11 flex-1 items-center justify-center gap-1 rounded-lg px-2 py-2 text-center text-xs font-bold leading-4 transition-colors ${mode === 'ai' ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`} role="tab" aria-selected={mode === 'ai'} data-testid="button-mode-ai">🤖 AI Gợi Ý Thực Đơn Trước</button>
         <button type="button" onClick={() => setMode('custom')} className={`flex min-h-11 flex-1 items-center justify-center gap-1 rounded-lg px-2 py-2 text-center text-xs font-bold leading-4 transition-colors ${mode === 'custom' ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`} role="tab" aria-selected={mode === 'custom'} data-testid="button-mode-custom">🧺 Tôi Tự Nhập Túi Đồ / Tủ Lạnh</button>
       </div>
-      {mode === 'ai' && <div className="shopping-budget-strip" aria-label="Tiến độ ngân sách tuần"><span className="shrink-0">💰 Đã chi: {money(totalCost)} / {money(targetBudget)}</span><span className="shopping-budget-track" aria-hidden="true"><span style={{ width: `${budgetPercent}%` }} /></span><span className="shrink-0">Còn lại: {money(remainingBudget)} ({boughtCount}/{totalCount} món)</span>
-      </div>}
     </section>
+    {mode === 'ai' && <div className="shopping-header-card" data-testid="card-shopping-summary">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <span className="shopping-header-icon" aria-hidden="true">🛒</span>
+        <div className="min-w-0">
+          <p className="truncate text-xs font-extrabold uppercase tracking-wide">Danh Sách Đi Chợ Hôm Nay</p>
+          <p className="mt-0.5 truncate text-[11px] font-semibold text-muted-foreground">Còn lại {money(remainingBudget)} · {boughtCount}/{totalCount} món đã có</p>
+        </div>
+      </div>
+      <div className="shrink-0 text-right">
+        <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Tổng</p>
+        <p className="text-lg font-extrabold text-primary">{money(totalCost)}</p>
+      </div>
+    </div>}
     {mode === 'ai' ? <>
       <ActualSpendTracker estimated={totalCost} spendLog={spendLog} onRecordSpend={onRecordSpend} />
-      <ShoppingGroupV2 title="Thực phẩm tươi sống" subtitle="Thịt, cá, tôm, rau và củ" items={freshItems} bought={bought} toggle={toggle} updateQuantity={updateQuantity} kind="fresh" />
-      <ShoppingGroupV2 title="Đồ khô & gia vị" subtitle="Gạo, bún, tôm khô và các món để dành" items={dryItems} bought={bought} toggle={toggle} updateQuantity={updateQuantity} kind="dry" />
+      <ShoppingGroupV2 title="Thực phẩm tươi sống" subtitle="Thịt, cá, tôm, rau và củ" items={freshItems} bought={bought} toggle={toggle} kind="fresh" />
+      <ShoppingGroupV2 title="Đồ khô & gia vị" subtitle="Gạo, bún, tôm khô và các món để dành" items={dryItems} bought={bought} toggle={toggle} kind="dry" />
+      <ShoppingActionOptions freshItems={freshItems} dryItems={dryItems} customItems={customItems} totalCost={totalCost} copied={copied} onCopyList={copyShoppingList} buildListText={buildShoppingListText} copyTextToClipboard={copyTextToClipboard} />
     </> : <CustomBagAiCard prefs={prefs} isPro={isPro} onUpgrade={onUpgrade} />}
-    <section className="paper-card border-[hsl(113_40%_45%/.3)] bg-secondary/45 p-4 md:p-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-[hsl(113_33%_30%)]">Mua tươi sống tiện hơn</p><p className="mt-1 text-sm font-semibold">Đặt một lần, giao đủ rau củ và thịt cá cho cả tuần.</p></div><a href={BACH_HOA_XANH_AFFILIATE_URL} target="_blank" rel="nofollow sponsored noopener" className="tactile inline-flex items-center justify-center gap-2 rounded-xl bg-[hsl(113_40%_45%)] px-4 py-3 text-xs font-bold text-white shadow-[0_4px_0_hsl(113_40%_35%)]" data-testid="link-bach-hoa-xanh"><ShoppingBasket size={16} /> 🛒 Đặt giao tận nhà qua Bách Hóa Xanh <ExternalLink size={13} /></a></div>
-    </section>
     <section className="paper-card p-5"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-muted-foreground">Tự thêm</p><h2 className="display-font mt-1 text-2xl font-bold">Món cần nhớ</h2></div><Plus size={20} className="text-primary" /></div><div className="mt-4 flex gap-2"><input value={newItem} onChange={(event) => setNewItem(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && add()} placeholder="Ví dụ: khăn giấy, nước rửa rau" className="min-w-0 flex-1 rounded-xl border bg-background px-3 py-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-custom-shopping" /><button onClick={add} className="tactile rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground" data-testid="button-add-shopping"><Plus size={16} /></button></div><div className="mt-3 space-y-2">{customItems.length === 0 ? <p className="rounded-xl border border-dashed p-4 text-center text-xs text-muted-foreground">Chưa có món tự thêm. Danh sách này chỉ của riêng nhà mình.</p> : customItems.map((item, index) => <div key={`${item.name}-${index}`} className={`flex items-center justify-between rounded-xl border bg-background px-3 py-3 ${item.bought ? 'opacity-50' : ''}`}><button onClick={() => setCustomItems(customItems.map((entry, i) => i === index ? { ...entry, bought: !entry.bought } : entry))} className="flex min-w-0 items-center gap-3 text-left text-sm font-bold" data-testid={`button-toggle-custom-${index}`}><span className={`flex h-5 w-5 items-center justify-center rounded-full border ${item.bought ? 'border-[hsl(113_40%_45%)] bg-[hsl(113_40%_45%)] text-white' : ''}`}>{item.bought && <Check size={12} />}</span><span className={item.bought ? 'line-through' : ''}>{item.name}</span></button><button onClick={() => setCustomItems(customItems.filter((_, i) => i !== index))} className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-destructive" aria-label="Xóa món tự thêm" data-testid={`button-remove-custom-${index}`}><Trash2 size={15} /></button></div>)}</div></section>
   </div>;
 }
@@ -1880,32 +1879,129 @@ function ActualSpendTracker({ estimated, spendLog, onRecordSpend }: { estimated:
   </section>;
 }
 
-function ShoppingGroupV2({ title, subtitle, items, bought, toggle, updateQuantity, kind }: { title: string; subtitle: string; items: [string, { qty: number; unit?: string }][]; bought: Set<string>; toggle: (name: string) => void; updateQuantity: (name: string, value: string) => void; kind: 'fresh' | 'dry' }) {
+function ShoppingGroupV2({ title, subtitle, items, bought, toggle, kind }: { title: string; subtitle: string; items: [string, { qty: number; unit?: string }][]; bought: Set<string>; toggle: (name: string) => void; kind: 'fresh' | 'dry' }) {
   const [open, setOpen] = useState(true);
   const groupTotal = items.reduce((sum, [name, value]) => sum + priceFor(name, value.qty), 0);
   const subGroups = kind === 'fresh' ? groupFreshItems(items) : null;
   return <section className="shopping-group paper-card overflow-hidden !mb-2">
     <button type="button" onClick={() => setOpen(!open)} className="shopping-group-header flex w-full items-center justify-between gap-3 border-b bg-muted/45 px-3 py-2.5 text-left" aria-expanded={open} data-testid={`button-toggle-shopping-group-${kind}`}><div className="min-w-0"><h2 className="truncate text-sm font-bold">{kind === 'fresh' ? '🥩 ' : '🧂 '}{title} <span className="font-medium text-muted-foreground">({items.length} món · {money(groupTotal)})</span></h2><p className="mt-0.5 truncate text-[10px] text-muted-foreground">{subtitle}</p></div><ChevronDown size={17} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} /></button>
-    {open && (items.length === 0 ? <p className="p-4 text-sm text-muted-foreground">Tuần này chưa có món thuộc nhóm này.</p> : subGroups ? <div className="space-y-3 p-2">{subGroups.map((sub) => { const subTotal = sub.items.reduce((sum, [name, value]) => sum + priceFor(name, value.qty), 0); return <div key={sub.label}><p className="px-1 pb-1.5 text-[11px] font-bold text-muted-foreground">{sub.icon} {sub.label} <span className="font-medium">({sub.items.length} món · {money(subTotal)})</span></p><div className="shopping-items-grid">{sub.items.map(([name, value]) => <ShoppingItemRow key={name} name={name} value={value} done={bought.has(name)} toggle={toggle} updateQuantity={updateQuantity} kind={kind} />)}</div></div>; })}</div> : <div className="shopping-items-grid p-2">{items.map(([name, value]) => <ShoppingItemRow key={name} name={name} value={value} done={bought.has(name)} toggle={toggle} updateQuantity={updateQuantity} kind={kind} />)}</div>)}
+    {open && (items.length === 0 ? <p className="p-4 text-sm text-muted-foreground">Tuần này chưa có món thuộc nhóm này.</p> : subGroups ? <div className="space-y-3 p-2">{subGroups.map((sub) => { const subTotal = sub.items.reduce((sum, [name, value]) => sum + priceFor(name, value.qty), 0); return <div key={sub.label}><p className="px-1 pb-1.5 text-[11px] font-bold text-muted-foreground">{sub.icon} {sub.label} <span className="font-medium">({sub.items.length} món · {money(subTotal)})</span></p><div className="shopping-items-grid">{sub.items.map(([name, value]) => <ShoppingItemRow key={name} name={name} value={value} done={bought.has(name)} toggle={toggle} kind={kind} />)}</div></div>; })}</div> : <div className="shopping-items-grid p-2">{items.map(([name, value]) => <ShoppingItemRow key={name} name={name} value={value} done={bought.has(name)} toggle={toggle} kind={kind} />)}</div>)}
   </section>;
 }
-function ShoppingItemRow({ name, value, done, toggle, updateQuantity, kind }: { name: string; value: { qty: number; unit?: string }; done: boolean; toggle: (name: string) => void; updateQuantity: (name: string, value: string) => void; kind: 'fresh' | 'dry' }) {
+function ShoppingItemRow({ name, value, done, toggle, kind }: { name: string; value: { qty: number; unit?: string }; done: boolean; toggle: (name: string) => void; kind: 'fresh' | 'dry' }) {
   const affiliateUrl = SHOPPING_AFFILIATE_LINKS[name];
-  // Left side (checkbox + name) gets flex-1 min-w-0 with no truncate so the ingredient name is always
-  // fully readable; the right side (qty/price/link cluster) is shrink-0 + whitespace-nowrap so those
-  // numbers never get squeezed — this is what was hiding names in the old 2-col mobile grid.
-  return <div className={`shopping-item flex items-center justify-between gap-2 rounded-xl border px-4 py-3 transition-opacity ${done ? 'shopping-item-done' : 'bg-card'}`}>
-    <div className="flex min-w-0 flex-1 items-center gap-2">
-      <input type="checkbox" checked={done} onChange={() => toggle(name)} className="h-4 w-4 shrink-0 accent-[hsl(113_40%_45%)]" data-testid={`checkbox-have-${name}`} aria-label={`Nhà đã có ${name}`} />
-      <span className={`min-w-0 flex-1 text-xs font-bold ${done ? 'line-through' : ''}`}>{name}</span>
-    </div>
+  // Left side (checkbox + qty + name) gets flex-1 min-w-0 with no truncate so the ingredient name is
+  // always fully readable; the right side (price/link cluster) is shrink-0 + whitespace-nowrap so it
+  // never gets squeezed — this is what was hiding names in the old 2-col mobile grid.
+  return <div className={`shopping-item flex items-center justify-between gap-2 rounded-xl border px-4 py-3 transition-colors ${done ? 'shopping-item-done' : 'bg-card'}`}>
+    <button type="button" onClick={() => toggle(name)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left" data-testid={`checkbox-have-${name}`} aria-pressed={done} aria-label={`Đánh dấu đã có ${name}`}>
+      <span className={`shopping-checkbox ${done ? 'shopping-checkbox-done' : ''}`} aria-hidden="true">{done && <Check size={12} strokeWidth={3} />}</span>
+      <span className={`min-w-0 flex-1 text-xs font-bold leading-4 ${done ? 'line-through text-muted-foreground' : ''}`}>{displayQuantity(value)} {name}</span>
+    </button>
     <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
-      <span className="text-[10px] font-bold text-muted-foreground">{displayQuantity(value)}</span>
-      <input type="number" min="0" step={value.unit ? '0.1' : '5'} value={quantityEditorValue(value)} onChange={(event) => updateQuantity(name, event.target.value)} className="shopping-quantity" aria-label={`Số lượng ${name}`} data-testid={`input-quantity-${name}`} />
-      <span className="text-[10px] font-bold text-primary">{money(priceFor(name, value.qty))}</span>
+      <span className={`text-[11px] font-bold ${done ? 'text-muted-foreground' : 'text-primary'}`}>(~{money(priceFor(name, value.qty))})</span>
       {kind === 'dry' && affiliateUrl && <a href={affiliateUrl} target="_blank" rel="nofollow sponsored noopener" className="shopping-link-icon" aria-label={`Mua ${name} trên Shopee`} data-testid={`link-shopee-${name}`}><ExternalLink size={13} /></a>}
     </div>
   </div>;
+}
+
+function ShoppingActionOptions({ freshItems, dryItems, customItems, totalCost, copied, onCopyList, buildListText, copyTextToClipboard }: { freshItems: [string, { qty: number; unit?: string }][]; dryItems: [string, { qty: number; unit?: string }][]; customItems: { name: string; bought: boolean }[]; totalCost: number; copied: boolean; onCopyList: () => void; buildListText: () => string; copyTextToClipboard: (text: string) => Promise<void> }) {
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
+  const [sentApp, setSentApp] = useState<'shopeefood' | 'grabmart' | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+  const checklistRef = useRef<HTMLDivElement>(null);
+  const totalItems = freshItems.length + dryItems.length + customItems.length;
+
+  const sendToDeliveryApp = async (app: 'shopeefood' | 'grabmart') => {
+    const url = app === 'shopeefood' ? 'https://shopeefood.vn/' : 'https://food.grab.com/vn/vi/grabmart/';
+    try { await copyTextToClipboard(buildListText()); } catch { /* ignore */ }
+    trackEvent('shopping_send_to_delivery_app', { app });
+    window.open(url, '_blank', 'noopener');
+    setSentApp(app);
+    window.setTimeout(() => setSentApp(null), 2200);
+  };
+
+  const exportChecklistImage = async () => {
+    const node = checklistRef.current;
+    if (!node || exporting) return;
+    setExporting(true);
+    setExportError('');
+    trackEvent('shopping_checklist_export_started', { items: totalItems });
+    try {
+      const { default: html2canvas } = await import('html2canvas');
+      if (document.fonts?.ready) await document.fonts.ready;
+      const canvas = await html2canvas(node, { scale: 2, backgroundColor: '#FFFFFF', useCORS: true, logging: false });
+      const dataUrl = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = 'checklist-di-cho-30-phut-yeu-thuong.png';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      trackEvent('shopping_checklist_exported', { items: totalItems });
+    } catch {
+      setExportError('Chưa tạo được ảnh lúc này. Bạn thử lại nhé.');
+      trackEvent('shopping_checklist_export_failed', {});
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return <section className="paper-card !mb-2 p-4 md:p-5" data-testid="card-shopping-actions">
+    <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">💡 Chọn Cách Đi Chợ Tiện Lợi Cho Bạn:</p>
+    <div className="mt-3 space-y-2.5">
+      <a href={BACH_HOA_XANH_AFFILIATE_URL} target="_blank" rel="nofollow sponsored noopener" className="shopping-action-btn shopping-action-primary tactile bhx-cta" data-testid="link-bach-hoa-xanh">
+        <span className="shopping-action-icon">📱</span>
+        <span className="min-w-0 flex-1 text-left"><span className="block text-sm font-bold">Đặt Bách Hóa Xanh 1-Chạm</span><span className="block text-[11px] opacity-85">Giao tận nhà, đủ rau củ thịt cá cho cả tuần</span></span>
+        <ExternalLink size={15} className="shrink-0" />
+      </a>
+      <div>
+        <button type="button" onClick={() => setDeliveryOpen((open) => !open)} className="shopping-action-btn tactile" aria-expanded={deliveryOpen} data-testid="button-order-delivery">
+          <span className="shopping-action-icon">🛵</span>
+          <span className="min-w-0 flex-1 text-left"><span className="block text-sm font-bold">Đặt Qua ShopeeFood / GrabMart</span><span className="block text-[11px] text-muted-foreground">Copy danh sách rồi dán vào ghi chú đơn hàng</span></span>
+          <ChevronDown size={15} className={`shrink-0 transition-transform ${deliveryOpen ? 'rotate-180' : ''}`} />
+        </button>
+        {deliveryOpen && <div className="mt-2 grid grid-cols-2 gap-2 pl-1" data-testid="panel-delivery-options">
+          <button type="button" onClick={() => sendToDeliveryApp('shopeefood')} className="shopping-action-sub tactile" data-testid="button-send-shopeefood">{sentApp === 'shopeefood' ? <Check size={14} /> : '🛵'} {sentApp === 'shopeefood' ? 'Đã copy!' : 'ShopeeFood'}</button>
+          <button type="button" onClick={() => sendToDeliveryApp('grabmart')} className="shopping-action-sub tactile" data-testid="button-send-grabmart">{sentApp === 'grabmart' ? <Check size={14} /> : '🟩'} {sentApp === 'grabmart' ? 'Đã copy!' : 'GrabMart'}</button>
+        </div>}
+      </div>
+      <button type="button" onClick={onCopyList} className="shopping-action-btn tactile" data-testid="button-export-zalo-list">
+        <span className="shopping-action-icon">📋</span>
+        <span className="min-w-0 flex-1 text-left"><span className="block text-sm font-bold">{copied ? 'Đã copy danh sách!' : 'Xuất Danh Sách Zalo'}</span><span className="block text-[11px] text-muted-foreground">Để tự đi chợ hoặc nhờ chồng đi giúp</span></span>
+        {copied ? <Check size={15} className="shrink-0" /> : <Copy size={15} className="shrink-0" />}
+      </button>
+      <button type="button" onClick={exportChecklistImage} disabled={exporting} className="shopping-action-btn tactile disabled:opacity-60" data-testid="button-export-checklist-image">
+        <span className="shopping-action-icon">🖨️</span>
+        <span className="min-w-0 flex-1 text-left"><span className="block text-sm font-bold">{exporting ? 'Đang tạo ảnh...' : 'Tải Checklist Dán Tủ Lạnh'}</span><span className="block text-[11px] text-muted-foreground">Ảnh PNG in ra dán tủ lạnh cho cả nhà</span></span>
+        {exporting ? <LoaderCircle size={15} className="shrink-0 animate-spin" /> : <Download size={15} className="shrink-0" />}
+      </button>
+    </div>
+    {exportError && <p className="mt-2 text-[11px] font-bold text-destructive">⚠️ {exportError}</p>}
+    <div className="menu-infographic-offscreen" aria-hidden="true">
+      <div ref={checklistRef} className="shopping-checklist-card">
+        <div className="shopping-checklist-header">
+          <span>🛒 CHECKLIST ĐI CHỢ</span>
+          <span>{formatDayMonth(vietnamTodayDate(), true)}</span>
+        </div>
+        {freshItems.length > 0 && <div className="shopping-checklist-section">
+          <p>Thực phẩm tươi sống</p>
+          {freshItems.map(([name, value]) => <div className="shopping-checklist-row" key={name}><span className="shopping-checklist-box" />{displayQuantity(value)} {name}<span className="shopping-checklist-price">{money(priceFor(name, value.qty))}</span></div>)}
+        </div>}
+        {dryItems.length > 0 && <div className="shopping-checklist-section">
+          <p>Đồ khô & gia vị</p>
+          {dryItems.map(([name, value]) => <div className="shopping-checklist-row" key={name}><span className="shopping-checklist-box" />{displayQuantity(value)} {name}<span className="shopping-checklist-price">{money(priceFor(name, value.qty))}</span></div>)}
+        </div>}
+        {customItems.length > 0 && <div className="shopping-checklist-section">
+          <p>Tự thêm</p>
+          {customItems.map((item, index) => <div className="shopping-checklist-row" key={`${item.name}-${index}`}><span className="shopping-checklist-box" />{item.name}</div>)}
+        </div>}
+        <div className="shopping-checklist-total">Tổng ước tính: {money(totalCost)}</div>
+        <div className="shopping-checklist-footer">🍲 30 Phút Yêu Thương</div>
+      </div>
+    </div>
+  </section>;
 }
 
 function CustomBagAiCard({ prefs, isPro, onUpgrade }: { prefs: Preferences; isPro: boolean; onUpgrade: () => void }) {
