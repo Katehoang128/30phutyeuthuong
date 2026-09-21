@@ -1217,7 +1217,7 @@ function ZeroScrollMealPlanner({ plan, prefs, favorites, setFavorites, onSwap }:
     </div>
     <div className="paper-card !mb-0 p-3" data-testid="zero-scroll-meal-panel">
       <div className="mb-3 flex items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.14em] text-primary">{selectedDay}</p><h2 className="display-font text-xl font-bold">{mealLabel}</h2></div><span className="rounded-full bg-secondary px-3 py-1.5 text-[11px] font-bold text-secondary-foreground">{day ? `${dishes.length} món` : 'Đang khóa'}</span></div>
-      {day ? <MealGrid dishes={dishes} favorites={favorites} setFavorites={setFavorites} onSwap={(slot) => onSwap(planIndex, slot)} /> : <div className="rounded-xl bg-secondary/60 p-5 text-center"><p className="text-sm font-bold">Ngày này đang được khóa</p><p className="mt-1 text-xs text-muted-foreground">Mở khóa Pro để xem trọn thực đơn 7 ngày.</p></div>}
+      {day ? <MealGrid dishes={dishes} favorites={favorites} setFavorites={setFavorites} onSwap={(slot) => onSwap(planIndex, slot)} prefs={prefs} /> : <div className="rounded-xl bg-secondary/60 p-5 text-center"><p className="text-sm font-bold">Ngày này đang được khóa</p><p className="mt-1 text-xs text-muted-foreground">Mở khóa Pro để xem trọn thực đơn 7 ngày.</p></div>}
       <button type="button" onClick={() => { const target = document.getElementById('bhx-daily-cart'); target ? target.scrollIntoView({ behavior: 'smooth', block: 'start' }) : setLocation('/shopping'); }} className="warm-cta mt-3 flex w-full items-center justify-center gap-2 text-center" data-testid="button-meal-shopping"><ShoppingBasket size={17} /> Xem Danh Sách Đi Chợ Cho {selectedMeal === 'dinner' ? 'Bữa Tối' : mealLabel}</button>
     </div>
     {day && <BhxDailyCartCard key={`${selectedDay}-${selectedMeal}`} dishes={dishes} units={units} mealLabel={mealLabel} selectedDay={selectedDay} />}
@@ -1631,10 +1631,99 @@ function cookingSteps(dish: Dish) {
   };
   return steps[preparation] || steps.boil;
 }
+const PREP_TIPS: Record<string, string> = {
+  steam: 'Hấp lửa vừa, đậy kín vung để món giữ trọn vị ngọt tự nhiên.',
+  boil: 'Luộc vừa chín tới rồi vớt ngay để nguyên liệu không bị nhũn, mất chất.',
+  braise: 'Kho lửa nhỏ liu riu, nêm lại gần cuối để món đậm đà mà không mặn gắt.',
+  stirfry: 'Xào lửa lớn, đảo nhanh tay để nguyên liệu chín đều mà vẫn giòn ngọt.',
+  soup: 'Nêm nhạt tay, nấu vừa chín tới để canh giữ vị thanh, dễ ăn.',
+  grill: 'Ướp trước ít nhất 10 phút cho ngấm rồi mới nướng để món đậm vị hơn.',
+  raw: 'Trộn ngay trước khi ăn để món luôn tươi giòn, không bị ra nước.',
+  porridge: 'Khuấy đều tay, lửa nhỏ để cháo mềm mịn mà không bén nồi.',
+};
+// Single Dish Recipe Card Generator: same off-screen-node + html2canvas pattern as
+// WeeklyMenuExportCard, scoped to one dish. Ingredient qty is scaled by `units` (family portion
+// factor) so the card always reflects the household actually viewing it, not a generic 1-serving recipe.
+function RecipeCardExporter({ dish, units }: { dish: Dish; units: number }) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+  const [qrDataUrl, setQrDataUrl] = useState('');
+  const thumb = dishThumb(dish);
+  const steps = cookingSteps(dish);
+  const tip = PREP_TIPS[dish.preparation || ''] || 'Nêm nhạt tay, nếm lại trước khi tắt bếp để món vừa miệng cả nhà.';
+  const servings = Math.max(1, Math.round(units));
+
+  useEffect(() => {
+    let active = true;
+    import('qrcode')
+      .then((mod) => mod.default.toDataURL(ZALO_GROUP_URL, { width: 128, margin: 1, color: { dark: '#2D5A27', light: '#FFFFFF' } }))
+      .then((url) => { if (active) setQrDataUrl(url); })
+      .catch(() => { if (active) setQrDataUrl(''); });
+    return () => { active = false; };
+  }, []);
+
+  const exportImage = async () => {
+    const node = cardRef.current;
+    if (!node || exporting) return;
+    setExporting(true);
+    setExportError('');
+    trackEvent('recipe_card_export_started', { dish: dish.name });
+    try {
+      const { default: html2canvas } = await import('html2canvas');
+      if (document.fonts?.ready) await document.fonts.ready;
+      const canvas = await html2canvas(node, { scale: 2, backgroundColor: '#FAF9F5', useCORS: true, logging: false });
+      const dataUrl = canvas.toDataURL('image/png');
+      const slug = normalize(dish.name).replace(/[^a-z0-9]+/gi, '-').replace(/(^-+|-+$)/g, '').toLowerCase() || 'mon-an';
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = `cong-thuc-${slug}.png`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      trackEvent('recipe_card_exported', { dish: dish.name });
+    } catch {
+      setExportError('Chưa tạo được thẻ công thức lúc này. Bạn thử lại nhé.');
+      trackEvent('recipe_card_export_failed', { dish: dish.name });
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return <>
+    <button type="button" onClick={exportImage} disabled={exporting} className="recipe-card-export-btn tactile" data-testid={`button-export-recipe-${dish.name}`}>{exporting ? <LoaderCircle size={13} className="animate-spin" /> : <Camera size={13} />} {exporting ? 'Đang tạo ảnh...' : '📸 Tải Thẻ Công Thức Ảnh HD'}</button>
+    {exportError && <p className="mt-1 text-[10px] font-bold text-destructive">⚠️ {exportError}</p>}
+    <div className="menu-infographic-offscreen" aria-hidden="true">
+      <div ref={cardRef} className="recipe-card">
+        <div className="recipe-card-header">
+          <span className="recipe-card-thumb" style={{ background: thumb.bg }} aria-hidden="true">{thumb.emoji}</span>
+          <h1 className="recipe-card-title">{dish.name}</h1>
+          <div className="recipe-card-meta"><span>⏱ {dish.time} phút</span><span>🍽 {servings} khẩu phần</span></div>
+        </div>
+        <div className="recipe-card-body">
+          <div className="recipe-card-ingredients">
+            <h2>🧺 Nguyên liệu</h2>
+            <ul>{dish.ing.map(([name, qty, unit]) => <li key={name}><span>{name}</span><strong>{displayQuantity({ qty: qty * units, unit })}</strong></li>)}</ul>
+          </div>
+          <div className="recipe-card-steps">
+            <h2>🔥 Cách làm</h2>
+            <ol>{steps.map((step, index) => <li key={step}><span className="recipe-card-step-num">{index + 1}</span><span>{step}</span></li>)}</ol>
+          </div>
+        </div>
+        <div className="recipe-card-tip">💡 Mẹo Bếp Vén Khéo: {tip}</div>
+        <div className="recipe-card-footer">
+          <div className="recipe-card-brand"><span className="menu-infographic-logo menu-infographic-logo-sm">🍲</span><div><strong>30 Phút Yêu Thương</strong><span>Nấu nhanh một chút, thương nhau nhiều hơn.</span></div></div>
+          {qrDataUrl && <img src={qrDataUrl} alt="QR Group Zalo" width={56} height={56} />}
+        </div>
+      </div>
+    </div>
+  </>;
+}
 function DishRow({ dish, favorite, onFavorite, onSwap }: { dish: Dish; favorite: boolean; onFavorite: () => void; onSwap?: () => void }) { const n = nutrition(dish); const steps = cookingSteps(dish); return <div className="rounded-[16px] border border-[hsl(36_40%_90%)] bg-[#FFFDF8] p-3 shadow-[0_10px_20px_rgba(86,51,22,0.04)]"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-sm font-bold leading-5 text-foreground">{dish.name}</p><div className="mt-1 flex flex-wrap gap-1.5">{(dish.tags || []).slice(0, 2).map((tag) => <span key={tag} className="rounded-full border border-[hsl(36_40%_88%)] bg-white px-2 py-0.5 text-[10px] font-bold text-muted-foreground">{tag}</span>)}<span className="rounded-full bg-[hsl(43_100%_61%/.18)] px-2 py-0.5 text-[10px] font-bold text-foreground">{Math.round(n.cal)} kcal</span></div></div><div className="flex shrink-0 items-center gap-1.5"><button onClick={onSwap} className="flex h-11 items-center gap-1.5 rounded-full border border-[hsl(113_25%_52%)] bg-white px-3 text-[11px] font-bold text-[hsl(113_25%_36%)] shadow-sm" aria-label="🔄 Đổi món này" data-testid={`button-swap-${dish.name}`} title="🔄 Đổi món này"><RefreshCw size={13} /> <span className="hidden sm:inline">Đổi món</span></button><button onClick={onFavorite} className={`flex h-11 w-11 items-center justify-center rounded-full border ${favorite ? 'border-[hsl(113_25%_36%)] bg-[hsl(113_25%_36%)] text-white' : 'border-[hsl(36_40%_88%)] bg-white text-muted-foreground'}`} aria-label="Đánh dấu món yêu thích" data-testid={`button-favorite-${dish.name}`}><Heart size={15} fill={favorite ? 'currentColor' : 'none'} /></button></div></div><details className="mt-3 border-t border-[hsl(36_40%_90%)] pt-2"><summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-bold text-[hsl(113_25%_36%)]"><ChefHat size={14} /> Hướng dẫn nấu</summary><ol className="mt-2 space-y-1.5 pl-5 text-xs leading-5 text-muted-foreground">{steps.map((step, index) => <li key={`${dish.name}-step-${index}`} className="pl-1">{step}</li>)}</ol></details></div>; }
-function MealGrid({ dishes, favorites, setFavorites, onSwap }: { dishes: { dish: Dish; slot: DishSlot }[]; favorites: Set<string>; setFavorites: (value: Set<string>) => void; onSwap: (slot: DishSlot) => void }) {
+function MealGrid({ dishes, favorites, setFavorites, onSwap, prefs }: { dishes: { dish: Dish; slot: DishSlot }[]; favorites: Set<string>; setFavorites: (value: Set<string>) => void; onSwap: (slot: DishSlot) => void; prefs: Preferences }) {
   const groupLabels = ['Món đạm', 'Món rau', 'Món canh'];
-  return <div className="meal-grid-wrap"><div className="meal-grid">{dishes.map(({ dish, slot }, index) => { const thumb = dishThumb(dish); return <article key={slot} className="meal-grid-card"><div className="meal-grid-top"><span className="meal-grid-thumb" style={{ background: thumb.bg }} aria-hidden="true">{thumb.emoji}</span><p className="meal-grid-group">{groupLabels[index] || 'Món ăn'}</p></div><p className="meal-grid-name">{dish.name}</p><div className="flex flex-wrap items-center gap-1"><span className="meal-grid-kcal">{Math.round(nutrition(dish).cal)} kcal</span>{dish.veg && <span className="meal-grid-veg">🌱 Chay</span>}</div><div className="meal-grid-actions"><button type="button" onClick={() => onSwap(slot)} className="meal-grid-action" aria-label={`Đổi ${dish.name}`} data-testid={`button-grid-swap-${dish.name}`}><RefreshCw size={13} /> Đổi</button><button type="button" onClick={() => { const next = new Set(favorites); next.has(dish.name) ? next.delete(dish.name) : next.add(dish.name); setFavorites(next); }} className={`meal-grid-favorite ${favorites.has(dish.name) ? 'is-favorite' : ''}`} aria-label={`Yêu thích ${dish.name}`} data-testid={`button-grid-favorite-${dish.name}`}><Heart size={15} fill={favorites.has(dish.name) ? 'currentColor' : 'none'} /></button></div></article>; })}</div><details className="meal-guide"><summary>📖 Xem hướng dẫn nấu {dishes.length} món này</summary><div className="meal-guide-content">{dishes.map(({ dish }) => <div key={dish.name}><strong>{dish.name}</strong><ol>{cookingSteps(dish).map((step) => <li key={step}>{step}</li>)}</ol></div>)}</div></details></div>;
+  const units = unitsOf(prefs);
+  return <div className="meal-grid-wrap"><div className="meal-grid">{dishes.map(({ dish, slot }, index) => { const thumb = dishThumb(dish); return <article key={slot} className="meal-grid-card"><div className="meal-grid-top"><span className="meal-grid-thumb" style={{ background: thumb.bg }} aria-hidden="true">{thumb.emoji}</span><p className="meal-grid-group">{groupLabels[index] || 'Món ăn'}</p></div><p className="meal-grid-name">{dish.name}</p><div className="flex flex-wrap items-center gap-1"><span className="meal-grid-kcal">{Math.round(nutrition(dish).cal)} kcal</span>{dish.veg && <span className="meal-grid-veg">🌱 Chay</span>}</div><div className="meal-grid-actions"><button type="button" onClick={() => onSwap(slot)} className="meal-grid-action" aria-label={`Đổi ${dish.name}`} data-testid={`button-grid-swap-${dish.name}`}><RefreshCw size={13} /> Đổi</button><button type="button" onClick={() => { const next = new Set(favorites); next.has(dish.name) ? next.delete(dish.name) : next.add(dish.name); setFavorites(next); }} className={`meal-grid-favorite ${favorites.has(dish.name) ? 'is-favorite' : ''}`} aria-label={`Yêu thích ${dish.name}`} data-testid={`button-grid-favorite-${dish.name}`}><Heart size={15} fill={favorites.has(dish.name) ? 'currentColor' : 'none'} /></button></div></article>; })}</div><details className="meal-guide"><summary>📖 Xem hướng dẫn nấu {dishes.length} món này</summary><div className="meal-guide-content">{dishes.map(({ dish }) => <div key={dish.name}><strong>{dish.name}</strong><ol>{cookingSteps(dish).map((step) => <li key={step}>{step}</li>)}</ol><RecipeCardExporter dish={dish} units={units} /></div>)}</div></details></div>;
 }
 
 function TodayCard({ day, prefs }: { day: DayPlan; prefs: Preferences }) {

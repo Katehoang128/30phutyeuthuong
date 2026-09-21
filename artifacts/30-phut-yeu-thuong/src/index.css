@@ -283,6 +283,28 @@
 .menu-infographic-signature strong { display: block; font-size: 13px; font-weight: 700; color: #2D5A27; }
 .menu-infographic-signature span { display: block; margin-top: 1px; font-size: 11px; font-weight: 500; color: #6C757D; }
 
+/* Single Dish Recipe Card: fixed 640px design width, same off-screen html2canvas capture pattern. */
+.recipe-card-export-btn { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; border-radius: 999px; border: 1px solid rgba(232, 106, 51, .3); background: rgba(232, 106, 51, .08); padding: 7px 14px; color: #E86A33; font-size: 11px; font-weight: 700; }
+.recipe-card-export-btn:disabled { cursor: not-allowed; opacity: .65; }
+.recipe-card { width: 640px; background: #FAF9F5; padding: 36px; font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif; color: #2B2D42; }
+.recipe-card-header { display: flex; flex-direction: column; align-items: center; margin-bottom: 22px; text-align: center; }
+.recipe-card-thumb { display: flex; height: 88px; width: 88px; flex: 0 0 auto; align-items: center; justify-content: center; border-radius: 999px; border: 4px solid #fff; background: #D8F3DC; box-shadow: 0 8px 20px rgba(43, 45, 66, .1); font-size: 44px; }
+.recipe-card-title { margin: 14px 0 6px; font-family: 'Fraunces', Georgia, serif; font-size: 32px; font-weight: 700; line-height: 1.2; color: #2D5A27; }
+.recipe-card-meta { display: flex; gap: 16px; font-size: 13px; font-weight: 700; color: #E86A33; }
+.recipe-card-body { display: grid; grid-template-columns: 1fr 1.3fr; gap: 22px; border-radius: 20px; border: 1px solid #E5E7EB; background: #fff; padding: 22px; }
+.recipe-card-ingredients h2, .recipe-card-steps h2 { margin: 0 0 12px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: #2D5A27; }
+.recipe-card-ingredients ul { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
+.recipe-card-ingredients li { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px dashed #E5E7EB; padding-bottom: 8px; font-size: 12.5px; }
+.recipe-card-ingredients li strong { flex: 0 0 auto; color: #E86A33; white-space: nowrap; }
+.recipe-card-steps ol { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.recipe-card-steps li { display: flex; gap: 10px; font-size: 12.5px; line-height: 18px; }
+.recipe-card-step-num { display: flex; height: 22px; width: 22px; flex: 0 0 auto; align-items: center; justify-content: center; border-radius: 999px; background: #2D5A27; color: #fff; font-size: 11px; font-weight: 700; }
+.recipe-card-tip { margin-top: 18px; border-radius: 16px; border: 1px dashed rgba(232, 106, 51, .4); background: rgba(232, 106, 51, .08); padding: 14px 18px; font-size: 13px; font-weight: 600; line-height: 19px; color: #9f4426; }
+.recipe-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 18px; border-top: 1px solid #E5E7EB; padding-top: 16px; }
+.recipe-card-brand { display: flex; align-items: center; gap: 8px; }
+.recipe-card-brand strong { display: block; font-size: 12px; font-weight: 700; color: #2D5A27; }
+.recipe-card-brand span { display: block; margin-top: 1px; font-size: 10px; font-weight: 500; color: #6C757D; }
+
 @media (min-width: 768px) {
   .site-header-inner { width: min(1120px, calc(100% - 64px)); }
   .menu-day-selector { top: 78px; margin-inline: 0; border-radius: 16px; }
