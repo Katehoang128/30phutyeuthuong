@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { BagIngredientInput } from './bagIngredientInput';
+import type { DietaryMode } from './dietaryMode';
 import type { FamilyProfile } from './familyProfile';
 import type { SafetyContext } from './safetyContext';
 
@@ -15,4 +16,11 @@ export interface MealTrayRequest {
   bagIngredients?: BagIngredientInput[];
   /** Ngày dương lịch hiện tại (YYYY-MM-DD) để tự nhận biết Mùng 1/Rằm âm lịch; mặc định lấy giờ máy chủ nếu bỏ trống */
   dateISO?: string;
+  /** Chế độ & khẩu vị đang bật (có thể chọn nhiều đồng thời, ví dụ U40 + Đa thế hệ) */
+  dietaryModes?: DietaryMode[];
+  /**
+     * Tên các món mặn (Món Đạm) đã dùng trong tối đa 7 ngày gần nhất, cũ nhất trước - mới nhất sau, dùng cho Anti-Repetition Engine
+     * @maxItems 7
+     */
+  recentDishesHistory?: string[];
 }

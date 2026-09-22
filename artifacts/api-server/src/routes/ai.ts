@@ -10,6 +10,19 @@ import {
   GenerateMealWeekResponse,
 } from "@workspace/api-zod";
 import { isLunarFirstOrFullMoonDay } from "../lib/lunar";
+import {
+  DietaryMode,
+  RECIPE_MATRIX,
+  RecipeCategory,
+  applyDietaryModes,
+  expandAllergyTerms,
+  filterMatrixByAllergens,
+  filterOutRecentMainDishes,
+  formatMatrixForPrompt,
+  normalizeVi,
+  pickFallbackDish,
+  textHasBlockedAllergen,
+} from "../lib/recipeMatrix";
 
 const router: IRouter = Router();
 const GEMINI_MODEL = "gemini-3.6-flash";
@@ -213,6 +226,94 @@ Hãy linh hoạt biến tấu mâm cơm theo các phong cách: Truyền Thống 
 Nếu gia đình có trẻ nhỏ, ưu tiên món mềm, dễ tiêu hóa, cắt thái nhỏ gọn nhưng vẫn kích thích thị giác cho bé.`;
 }
 
+// Dynamic Cuisine Transformer: one instruction block per selected chế độ & khẩu vị. Multiple modes
+// can be active at once (ví dụ gia đình U40 có con nhỏ), so all matching lines get appended.
+const DIETARY_MODE_INSTRUCTIONS: Record<DietaryMode, string> = {
+  u40_estrogen:
+    "- [U40 / Cân bằng nội tiết]: Ưu tiên tối đa nguyên liệu giàu phytoestrogen & omega-3: đậu nành/đậu hũ, hạt mè, cá hồi, nấm, rau mầm — mỗi mâm nên có ít nhất 1 nguyên liệu thuộc nhóm này.",
+  tre_nho_da_the_he:
+    "- [Trẻ nhỏ / Đa thế hệ]: Ưu tiên món mềm, dễ nhai nuốt (hấp, sốt cà chua, ninh mềm), cắt/thái miếng vừa ăn phù hợp cả người già lẫn trẻ nhỏ, trình bày màu sắc rực rỡ bắt mắt để kích thích trẻ ăn ngon.",
+  chay_thanh_tinh:
+    "- [Chay / Rằm / Mùng 1]: BẮT BUỘC chuyển 100% mâm cơm sang chay thanh tịnh — KHÔNG dùng bất kỳ thịt, cá, hải sản, trứng nào; đảm bảo đủ đạm thực vật (đậu hũ, nấm, các loại đậu, mè).",
+  doi_vi_a_au:
+    "- [Đổi vị Á - Âu]: Linh hoạt xen kẽ món Hàn Quốc (bulgogi, kimchi, canh kim chi), Nhật Bản (teriyaki, miso) và Âu-Mỹ (mì Ý, súp kem, salad ức gà) — mỗi món vẫn giữ dạng tinh gọn, nấu xong trong 30 phút.",
+};
+
+function dietaryModeInstructionsText(modes: DietaryMode[]) {
+  if (!modes.length) return "";
+  return `\n\nCHẾ ĐỘ & KHẨU VỊ ĐANG BẬT (Dynamic Cuisine Transformer — áp dụng đồng thời nếu có nhiều chế độ):\n${modes.map((mode) => DIETARY_MODE_INSTRUCTIONS[mode]).join("\n")}`;
+}
+
+// Anti-Repetition Engine part 2 (prompt-level belt to the code-level suspenders in enforceTraySafety):
+// only the most recent 3 days of recentDishesHistory are a hard no-repeat window, even though up to
+// 7 days of history may be stored/sent for context.
+function recentHistoryInstructionText(recentDishesHistory: string[]) {
+  const last3 = recentDishesHistory.slice(-3);
+  if (!last3.length) return "";
+  return `\n\nCHỐNG TRÙNG LẶP (Anti-Repetition Engine): Gia đình đã ăn các món mặn sau trong 3 ngày gần đây: ${last3.join(", ")}. TUYỆT ĐỐI KHÔNG chọn lại đúng các món này hoặc biến tấu na ná (cùng loại đạm + cùng cách chế biến).`;
+}
+
+// Recipe Matrix section: the candidate pool is filtered by allergens + recent history + dietary
+// mode BEFORE it ever reaches the prompt, so Gemini is steered toward an already-safe, already-
+// diverse set of dishes instead of relying only on it correctly following text instructions.
+function recipeMatrixSectionText(blockedTerms: string[], dietaryModes: DietaryMode[], recentDishesHistory: string[]) {
+  let pool = filterMatrixByAllergens(RECIPE_MATRIX, blockedTerms);
+  pool = filterOutRecentMainDishes(pool, recentDishesHistory);
+  pool = applyDietaryModes(pool, dietaryModes);
+  const formatted = formatMatrixForPrompt(pool);
+  if (!formatted) return "";
+  return `\n\nKHO MÓN ĂN GỢI Ý (Recipe Matrix — đã lọc sẵn theo dị ứng/lịch sử ăn/chế độ đang bật; ưu tiên chọn hoặc sáng tạo biến tấu từ đây, không bắt buộc rập khuôn nguyên văn):\n${formatted}`;
+}
+
+type TrayDish = {
+  category: string;
+  name: string;
+  portion_hand_rule: string;
+  ingredients: { item: string; amount: string; cost: number }[];
+  tags?: string[];
+  allergens?: string[];
+};
+type TrayLike = { dishes: TrayDish[]; total_estimated_cost: number };
+
+// Post-response hard safety net: a prompt instruction is a strong nudge, not a guarantee. This runs
+// AFTER Gemini answers and re-validates every dish against the same allergen/history rules the
+// prompt was given — any violation gets swapped (not just flagged) for a matrix-guaranteed-safe
+// dish before the response ever reaches the client, so "loại bỏ 100% dị ứng" holds even if the
+// model slips. `usedMainNames` is threaded across days by the caller so a whole week never repeats
+// a Món Đạm, on top of the 3-day recent-history window.
+function enforceTraySafety<T extends TrayLike>(
+  tray: T,
+  opts: { blockedTerms: string[]; recentDishesHistory: string[]; modes: DietaryMode[]; usedMainNames: Set<string> },
+): T {
+  const dishes = tray.dishes.map((dish) => {
+    const category = dish.category as RecipeCategory;
+    const text = `${dish.name} ${(dish.allergens || []).join(" ")} ${dish.ingredients.map((item) => item.item).join(" ")}`;
+    const violatesAllergen = textHasBlockedAllergen(text, opts.blockedTerms);
+    const nameKey = normalizeVi(dish.name);
+    const violatesHistory =
+      category === "Món Đạm" &&
+      (opts.recentDishesHistory.slice(-3).map(normalizeVi).includes(nameKey) || opts.usedMainNames.has(nameKey));
+
+    if (!violatesAllergen && !violatesHistory) {
+      if (category === "Món Đạm") opts.usedMainNames.add(nameKey);
+      return dish;
+    }
+
+    const fallback = pickFallbackDish(category, opts.blockedTerms, opts.recentDishesHistory, opts.modes, [...opts.usedMainNames]);
+    if (!fallback) return dish; // Recipe Matrix has no safe candidate left for this slot — leave as-is rather than drop the slot.
+    if (category === "Món Đạm") opts.usedMainNames.add(normalizeVi(fallback.name));
+    return {
+      ...dish,
+      name: fallback.name,
+      tags: fallback.tags,
+      allergens: fallback.allergens,
+      ingredients: [{ item: fallback.name, amount: "vừa ăn 1 khẩu phần", cost: fallback.estimated_cost }],
+    };
+  });
+  const total_estimated_cost = dishes.reduce((sum, dish) => sum + dish.ingredients.reduce((s, item) => s + (item.cost || 0), 0), 0);
+  return { ...tray, dishes, total_estimated_cost } as T;
+}
+
 router.post("/ai/meal-tray", async (req, res): Promise<void> => {
   const parsed = GenerateMealTrayBody.safeParse(req.body);
   if (!parsed.success) {
@@ -221,7 +322,8 @@ router.post("/ai/meal-tray", async (req, res): Promise<void> => {
     return;
   }
 
-  const { familyProfile, safety, bagIngredients, dateISO } = parsed.data;
+  const { familyProfile, safety, bagIngredients, dateISO, dietaryModes = [], recentDishesHistory = [] } = parsed.data;
+  const blockedTerms = expandAllergyTerms(safety.allergies, safety.allergyOther);
   try {
     const result = await generateJson([
       {
@@ -235,6 +337,7 @@ Dựa trên thông tin cài đặt của gia đình và ngân sách người dù
 ${mealTrayRulesText()}
 
 ${familyProfileNote(familyProfile)}${bagIngredientsNote(bagIngredients)}${lunarNote(dateISO)}
+${dietaryModeInstructionsText(dietaryModes)}${recentHistoryInstructionText(recentDishesHistory)}${recipeMatrixSectionText(blockedTerms, dietaryModes, recentDishesHistory)}
 
 ${safetyInstructions(safety)}
 
@@ -245,17 +348,19 @@ ${safetyInstructions(safety)}
   "cooking_time_minutes": 25,
   "health_benefits_note": "1 câu giải thích lợi ích dinh dưỡng (VD: Chuẩn WHO, giàu phytoestrogen cho U40)",
   "dishes": [
-    {"category": "Món Đạm", "name": "Tên món đạm hấp dẫn", "portion_hand_rule": "1 lòng bàn tay (~150g)", "ingredients": [{"item": "Tên nguyên liệu", "amount": "150g", "cost": 25000}]},
-    {"category": "Món Rau", "name": "Tên món rau/xào hấp dẫn", "portion_hand_rule": "2 cả bàn tay (~250g)", "ingredients": [{"item": "Tên rau củ", "amount": "250g", "cost": 10000}]},
-    {"category": "Món Canh", "name": "Tên món canh thanh mát", "portion_hand_rule": "1 bát canh thanh", "ingredients": [{"item": "Tên nguyên liệu canh", "amount": "100g", "cost": 8000}]}
+    {"category": "Món Đạm", "name": "Tên món đạm hấp dẫn", "portion_hand_rule": "1 lòng bàn tay (~150g)", "ingredients": [{"item": "Tên nguyên liệu", "amount": "150g", "cost": 25000}], "tags": ["U40_Estrogen"], "allergens": []},
+    {"category": "Món Rau", "name": "Tên món rau/xào hấp dẫn", "portion_hand_rule": "2 cả bàn tay (~250g)", "ingredients": [{"item": "Tên rau củ", "amount": "250g", "cost": 10000}], "tags": ["WHO_Healthy"], "allergens": []},
+    {"category": "Món Canh", "name": "Tên món canh thanh mát", "portion_hand_rule": "1 bát canh thanh", "ingredients": [{"item": "Tên nguyên liệu canh", "amount": "100g", "cost": 8000}], "tags": ["Truyền_Thống_3Mien"], "allergens": []}
   ],
   "tags": ["🖐️ Chuẩn Bàn Tay", "🌸 U40 Estrogen", "🇰🇷 Đổi vị Hàn Quốc"]
 }
-total_estimated_cost phải bằng đúng tổng của mọi "cost" trong ingredients (VNĐ nguyên, không thập phân). dishes phải có đúng 3 phần tử, đúng thứ tự Món Đạm, Món Rau, Món Canh. tags gồm 2-4 nhãn ngắn gọn kèm 1 emoji mỗi nhãn.`,
+total_estimated_cost phải bằng đúng tổng của mọi "cost" trong ingredients (VNĐ nguyên, không thập phân). dishes phải có đúng 3 phần tử, đúng thứ tự Món Đạm, Món Rau, Món Canh. Mỗi dish.tags chọn từ đúng 8 nhãn: Chay, WHO_Healthy, U40_Estrogen, Trẻ_Nhỏ, Đa_Thế_Hệ, Món_Trend, Hàn_Nhật, Truyền_Thống_3Mien. dish.allergens liệt kê nguyên liệu gây dị ứng có trong món (mảng rỗng nếu không có). tags (cấp mâm) gồm 2-4 nhãn ngắn gọn kèm 1 emoji mỗi nhãn.`,
         }],
       },
     ], req);
-    res.json(GenerateMealTrayResponse.parse(result));
+    const parsedResponse = GenerateMealTrayResponse.parse(result);
+    const safeResult = enforceTraySafety(parsedResponse, { blockedTerms, recentDishesHistory, modes: dietaryModes, usedMainNames: new Set() });
+    res.json(safeResult);
   } catch (error) {
     req.log.error({ err: error }, "Meal tray generation failed");
     res.status(502).json({ error: "Mình chưa lên được mâm cơm lúc này. Bạn thử lại sau ít giây nhé." });
@@ -272,7 +377,8 @@ router.post("/ai/meal-week", async (req, res): Promise<void> => {
     return;
   }
 
-  const { familyProfile, safety, bagIngredients, dateISO } = parsed.data;
+  const { familyProfile, safety, bagIngredients, dateISO, dietaryModes = [], recentDishesHistory = [] } = parsed.data;
+  const blockedTerms = expandAllergyTerms(safety.allergies, safety.allergyOther);
   try {
     const result = await generateJson([
       {
@@ -286,27 +392,31 @@ Dựa trên thông tin cài đặt của gia đình, hãy tạo ra LỊCH 7 MÂM
 ${mealTrayRulesText()}
 
 ${familyProfileNote(familyProfile)}${bagIngredientsNote(bagIngredients)}${weeklyLunarNote(dateISO)}
+${dietaryModeInstructionsText(dietaryModes)}${recentHistoryInstructionText(recentDishesHistory)}${recipeMatrixSectionText(blockedTerms, dietaryModes, recentDishesHistory)}
 
 ${safetyInstructions(safety)}
 
 YÊU CẦU RIÊNG CHO CẢ TUẦN:
 - Tạo đúng 7 mâm cơm theo đúng thứ tự Thứ 2, Thứ 3, Thứ 4, Thứ 5, Thứ 6, Thứ 7, Chủ nhật.
-- Đa dạng hoá món Đạm: KHÔNG dùng cùng 1 loại đạm chính (thịt heo/gà/bò/cá/tôm/đậu hũ...) ở 2 ngày liên tiếp.
+- Đa dạng hoá món Đạm: KHÔNG dùng cùng 1 loại đạm chính (thịt heo/gà/bò/cá/tôm/đậu hũ...) ở 2 ngày liên tiếp, và KHÔNG lặp lại đúng tên món mặn nào đã xuất hiện trong danh sách "đã ăn 3 ngày gần đây" ở trên cho các ngày đầu tuần này.
 - Nếu có nguyên liệu túi đồ ở trên, hãy rải và tận dụng toàn bộ số lượng đã cho trải đều 7 ngày, không vượt quá khối lượng thực có, ưu tiên dùng hết trước khi thêm nguyên liệu mới.
 - Ngày nào được ghi chú Mùng 1/Rằm ở trên thì mâm cơm ngày đó bắt buộc là mâm chay.
 
 CẤU TRÚC ĐẦU RA (OUTPUT FORMAT - BẮT BUỘC JSON CHUẨN, không thêm lời dẫn, không markdown):
 {
   "week": [
-    {"day_label": "Thứ 2", "meal_title": "Tên mâm cơm truyền cảm hứng", "total_estimated_cost": 55000, "cooking_time_minutes": 25, "health_benefits_note": "1 câu giải thích lợi ích dinh dưỡng", "dishes": [{"category": "Món Đạm", "name": "string", "portion_hand_rule": "1 lòng bàn tay (~150g)", "ingredients": [{"item": "string", "amount": "150g", "cost": 25000}]}, {"category": "Món Rau", "name": "string", "portion_hand_rule": "2 cả bàn tay (~250g)", "ingredients": [{"item": "string", "amount": "250g", "cost": 10000}]}, {"category": "Món Canh", "name": "string", "portion_hand_rule": "1 bát canh thanh", "ingredients": [{"item": "string", "amount": "100g", "cost": 8000}]}], "tags": ["🖐️ Chuẩn Bàn Tay"]},
+    {"day_label": "Thứ 2", "meal_title": "Tên mâm cơm truyền cảm hứng", "total_estimated_cost": 55000, "cooking_time_minutes": 25, "health_benefits_note": "1 câu giải thích lợi ích dinh dưỡng", "dishes": [{"category": "Món Đạm", "name": "string", "portion_hand_rule": "1 lòng bàn tay (~150g)", "ingredients": [{"item": "string", "amount": "150g", "cost": 25000}], "tags": ["U40_Estrogen"], "allergens": []}, {"category": "Món Rau", "name": "string", "portion_hand_rule": "2 cả bàn tay (~250g)", "ingredients": [{"item": "string", "amount": "250g", "cost": 10000}], "tags": ["WHO_Healthy"], "allergens": []}, {"category": "Món Canh", "name": "string", "portion_hand_rule": "1 bát canh thanh", "ingredients": [{"item": "string", "amount": "100g", "cost": 8000}], "tags": ["Truyền_Thống_3Mien"], "allergens": []}], "tags": ["🖐️ Chuẩn Bàn Tay"]},
     ... đủ 7 phần tử theo đúng thứ tự Thứ 2 -> Chủ nhật ...
   ]
 }
-Mỗi phần tử của "week" phải có đúng 3 dishes theo đúng thứ tự Món Đạm, Món Rau, Món Canh. total_estimated_cost của mỗi ngày phải bằng đúng tổng "cost" trong ingredients ngày đó (VNĐ nguyên, không thập phân). tags mỗi ngày gồm 2-4 nhãn ngắn gọn kèm 1 emoji.`,
+Mỗi phần tử của "week" phải có đúng 3 dishes theo đúng thứ tự Món Đạm, Món Rau, Món Canh. total_estimated_cost của mỗi ngày phải bằng đúng tổng "cost" trong ingredients ngày đó (VNĐ nguyên, không thập phân). Mỗi dish.tags chọn từ đúng 8 nhãn: Chay, WHO_Healthy, U40_Estrogen, Trẻ_Nhỏ, Đa_Thế_Hệ, Món_Trend, Hàn_Nhật, Truyền_Thống_3Mien. dish.allergens liệt kê nguyên liệu gây dị ứng có trong món (mảng rỗng nếu không có). tags mỗi ngày (cấp mâm) gồm 2-4 nhãn ngắn gọn kèm 1 emoji.`,
         }],
       },
     ], req);
-    res.json(GenerateMealWeekResponse.parse(result));
+    const parsedResponse = GenerateMealWeekResponse.parse(result);
+    const usedMainNames = new Set<string>();
+    const safeWeek = parsedResponse.week.map((day) => enforceTraySafety(day, { blockedTerms, recentDishesHistory, modes: dietaryModes, usedMainNames }));
+    res.json({ week: safeWeek });
   } catch (error) {
     req.log.error({ err: error }, "Meal week generation failed");
     res.status(502).json({ error: "Mình chưa lên được thực đơn tuần này. Bạn thử lại sau ít giây nhé." });

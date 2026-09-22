@@ -48,6 +48,7 @@ const PRO_PRICE = 49_000;
 const PRO_ANNUAL_PRICE = 399_000;
 const PRO_STORAGE_KEY = '30phut-pro-unlocked';
 const AI_USAGE_STORAGE_KEY = '30phut-ai-usage';
+const RECENT_DISH_HISTORY_KEY = '30phut-recent-main-dishes';
 const NEWSLETTER_STORAGE_KEY = '30phut-newsletter-email';
 const PREFS_STORAGE_KEY = '30phut-preferences';
 const PLAN_STORAGE_KEY = '30phut-plan';
@@ -206,6 +207,21 @@ function readAiUsage(): AiUsage {
   } catch {
     return { month: currentMonth(), count: 0 };
   }
+}
+
+// Anti-Repetition Engine (client half): remembers up to 7 ngày gần nhất of AI-generated Món Đạm
+// names (oldest -> newest) so the next /ai/meal-week call can tell the server what NOT to repeat —
+// the server's recipeMatrix.ts enforces the actual 3-day no-repeat window.
+function readRecentDishHistory(): string[] {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(RECENT_DISH_HISTORY_KEY) || 'null');
+    return Array.isArray(saved) ? saved.filter((item) => typeof item === 'string').slice(-7) : [];
+  } catch {
+    return [];
+  }
+}
+function writeRecentDishHistory(mainDishNames: string[]) {
+  window.localStorage.setItem(RECENT_DISH_HISTORY_KEY, JSON.stringify(mainDishNames.slice(-7)));
 }
 
 function unitsOf(p: Preferences) { return p.adults + p.elderly * .8 + p.kids * .55; }
@@ -709,8 +725,18 @@ function estimateBagWeek(items: BagItem[], prefs: Preferences) {
 
 // Real AI meal-pairing result shapes, mirrored from the api-server /ai/meal-week response.
 type MealTrayIngredientResult = { item: string; amount: string; cost: number };
-type MealTrayDishResult = { category: string; name: string; portion_hand_rule: string; ingredients: MealTrayIngredientResult[] };
+type MealTrayDishResult = { category: string; name: string; portion_hand_rule: string; ingredients: MealTrayIngredientResult[]; tags?: string[]; allergens?: string[] };
 type WeeklyMealTrayResult = { day_label: string; meal_title: string; total_estimated_cost: number; cooking_time_minutes: number; health_benefits_note: string; dishes: MealTrayDishResult[]; tags: string[] };
+
+// Dynamic Cuisine Transformer modes (Recipe Diversity System), mirrored from the api-server's
+// DietaryMode enum. Multiple modes can be active at once (ví dụ U40 + Đa thế hệ).
+type DietaryMode = 'u40_estrogen' | 'tre_nho_da_the_he' | 'chay_thanh_tinh' | 'doi_vi_a_au';
+const DIETARY_MODE_CHIPS: { mode: DietaryMode; emoji: string; label: string }[] = [
+  { mode: 'u40_estrogen', emoji: '🌸', label: 'U40 / Nội tiết tố' },
+  { mode: 'tre_nho_da_the_he', emoji: '👶', label: 'Trẻ nhỏ / Đa thế hệ' },
+  { mode: 'chay_thanh_tinh', emoji: '🌱', label: 'Chay / Rằm / Mùng 1' },
+  { mode: 'doi_vi_a_au', emoji: '🍜', label: 'Đổi vị Á - Âu' },
+];
 
 function BudgetProgress({ totalCost, targetBudget, className = "" }: { totalCost: number, targetBudget: number, className?: string }) {
   const percent = targetBudget > 0 ? (totalCost / targetBudget) * 100 : 0;
@@ -1222,30 +1248,38 @@ function BhxDailyCartCard({ dishes, units, mealLabel, selectedDay }: { dishes: {
   const ingredients = useMemo(() => dailyFreshIngredients(dishes, units), [dishes, units]);
   const [haveAlready, setHaveAlready] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState(false);
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
+  const [sentApp, setSentApp] = useState<'shopeefood' | 'grabmart' | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+  const checklistRef = useRef<HTMLDivElement>(null);
   if (ingredients.length === 0) return null;
   const toggleHave = (name: string) => setHaveAlready((current) => { const next = new Set(current); next.has(name) ? next.delete(name) : next.add(name); return next; });
   const cartTotal = ingredients.reduce((sum, item) => haveAlready.has(item.name) ? sum : sum + priceFor(item.name, item.qty), 0);
   const freeshipGap = 100000 - cartTotal;
+  const buildDailyListText = () => [
+    `🛒 DANH SÁCH ĐI CHỢ - ${mealLabel.toUpperCase()} ${selectedDay.toUpperCase()} - 30 PHÚT YÊU THƯƠNG`,
+    ...ingredients.map((item) => `${haveAlready.has(item.name) ? '✅' : '⬜'} ${item.name}: ${displayQuantity(item)}${haveAlready.has(item.name) ? ' (nhà đã có sẵn)' : ''} — ${money(priceFor(item.name, item.qty))}`),
+    `\n📦 Chi phí nguyên liệu dự toán: ~${money(cartTotal)}`,
+    `Mở ứng dụng: ${new URL('/', window.location.href).href}`,
+  ].join('\n');
+  const copyTextToClipboard = async (text: string) => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      textarea.remove();
+    }
+  };
   const shareDailyList = async () => {
-    const text = [
-      `🛒 DANH SÁCH ĐI CHỢ - ${mealLabel.toUpperCase()} ${selectedDay.toUpperCase()} - 30 PHÚT YÊU THƯƠNG`,
-      ...ingredients.map((item) => `${haveAlready.has(item.name) ? '✅' : '⬜'} ${item.name}: ${displayQuantity(item)}${haveAlready.has(item.name) ? ' (nhà đã có sẵn)' : ''} — ${money(priceFor(item.name, item.qty))}`),
-      `\n📦 Chi phí nguyên liệu tươi BHX dự toán: ~${money(cartTotal)}`,
-      `Mở ứng dụng: ${new URL('/', window.location.href).href}`,
-    ].join('\n');
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        textarea.remove();
-      }
+      await copyTextToClipboard(buildDailyListText());
       setCopied(true);
       trackEvent('bhx_daily_cart_shared', { day: selectedDay, meal: mealLabel, total: cartTotal });
       window.setTimeout(() => setCopied(false), 2200);
@@ -1253,20 +1287,67 @@ function BhxDailyCartCard({ dishes, units, mealLabel, selectedDay }: { dishes: {
       setCopied(false);
     }
   };
+  const sendToDeliveryApp = async (app: 'shopeefood' | 'grabmart') => {
+    const url = app === 'shopeefood' ? 'https://shopeefood.vn/' : 'https://food.grab.com/vn/vi/grabmart/';
+    try { await copyTextToClipboard(buildDailyListText()); } catch { /* ignore */ }
+    trackEvent('daily_cart_send_to_delivery_app', { app, day: selectedDay, meal: mealLabel });
+    window.open(url, '_blank', 'noopener');
+    setSentApp(app);
+    window.setTimeout(() => setSentApp(null), 2200);
+  };
+  const exportChecklistImage = async () => {
+    const node = checklistRef.current;
+    if (!node || exporting) return;
+    setExporting(true);
+    setExportError('');
+    trackEvent('daily_cart_checklist_export_started', { day: selectedDay, meal: mealLabel, items: ingredients.length });
+    try {
+      const { default: html2canvas } = await import('html2canvas');
+      if (document.fonts?.ready) await document.fonts.ready;
+      const canvas = await html2canvas(node, { scale: 2, backgroundColor: '#FFFFFF', useCORS: true, logging: false });
+      const dataUrl = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = `checklist-${selectedDay}-${mealLabel}.png`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      trackEvent('daily_cart_checklist_exported', { day: selectedDay, meal: mealLabel, items: ingredients.length });
+    } catch {
+      setExportError('Chưa tạo được ảnh lúc này. Bạn thử lại nhé.');
+      trackEvent('daily_cart_checklist_export_failed', {});
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return <section id="bhx-daily-cart" className="paper-card !mb-0 bhx-cart-card p-3.5" data-testid="card-bhx-daily-cart">
-    <div className="mb-2 flex items-center justify-between gap-2"><h3 className="min-w-0 truncate text-xs font-bold">🧾 Nguyên liệu tươi cho {mealLabel} {selectedDay}</h3><div className="flex shrink-0 items-center gap-1.5"><span className="text-[10px] font-bold text-muted-foreground">{ingredients.length} món</span><button type="button" onClick={shareDailyList} className="tactile inline-flex items-center gap-1 rounded-full border border-[hsl(43_31%_85%)] bg-white px-2 py-1 text-[10px] font-bold text-primary" aria-label="Gửi danh sách nguyên liệu ngày qua Zalo" data-testid="button-bhx-daily-share">{copied ? <Check size={11} /> : <Share2 size={11} />}{copied ? 'Đã copy' : 'Gửi Zalo'}</button></div></div>
-    <div className="space-y-1">{ingredients.map((item) => { const checked = haveAlready.has(item.name); return <label key={item.name} className={`bhx-cart-row ${checked ? 'bhx-cart-row-done' : ''}`}>
-      <input type="checkbox" checked={checked} onChange={() => toggleHave(item.name)} className="h-4 w-4 shrink-0" style={{ accentColor: '#008848' }} aria-label={`Nhà đã có sẵn ${item.name}`} data-testid={`checkbox-bhx-have-${item.name}`} />
-      <span className={`min-w-0 flex-1 truncate text-xs font-bold ${checked ? 'text-muted-foreground line-through' : ''}`}>{item.name}</span>
-      <span className="shrink-0 text-[10px] font-bold text-muted-foreground">{displayQuantity(item)}</span>
-      <span className="shrink-0 text-[10px] font-bold text-primary">{money(priceFor(item.name, item.qty))}</span>
-    </label>; })}</div>
-    <div className="mt-3 border-t border-[hsl(43_31%_90%)] pt-3">
-      <p className="text-xs font-bold">📦 Chi phí nguyên liệu tươi BHX dự toán: <span style={{ color: '#008848' }}>~{money(cartTotal)}</span></p>
-      {cartTotal > 0 && freeshipGap > 0 && <p className="mt-1.5 text-[11px] font-semibold leading-4 text-amber-700" data-testid="text-bhx-freeship-hint">🚚 Mua thêm Đồ khô/Sữa/Gia vị (~{Math.ceil(freeshipGap / 1000)}k) để đạt mốc FREESHIP của Bách Hóa Xanh</p>}
-      <a href={BACH_HOA_XANH_AFFILIATE_URL} target="_blank" rel="nofollow sponsored noopener" onClick={() => trackEvent('bhx_daily_cart_opened', { day: selectedDay, meal: mealLabel, total: cartTotal })} className="bhx-cta tactile mt-2.5 flex w-full items-center justify-center gap-2 text-center no-underline" data-testid="button-bhx-daily-cart"><ShoppingBasket size={16} /> 🛒 Đặt Giao Tươi Sáng Mai Qua Bách Hóa Xanh</a>
+    <div ref={checklistRef} className="bg-card">
+      <div className="mb-2 flex items-center justify-between gap-2"><h3 className="min-w-0 truncate text-xs font-bold">🧾 Nguyên liệu tươi cho {mealLabel} {selectedDay}</h3><div className="flex shrink-0 items-center gap-1.5"><span className="text-[10px] font-bold text-muted-foreground">{ingredients.length} món</span><button type="button" onClick={shareDailyList} className="tactile inline-flex items-center gap-1 rounded-full border border-[hsl(43_31%_85%)] bg-white px-2 py-1 text-[10px] font-bold text-primary" aria-label="Gửi danh sách nguyên liệu ngày qua Zalo" data-testid="button-bhx-daily-share">{copied ? <Check size={11} /> : <Share2 size={11} />}{copied ? 'Đã copy' : 'Gửi Zalo'}</button></div></div>
+      <div className="space-y-1">{ingredients.map((item) => { const checked = haveAlready.has(item.name); return <label key={item.name} className={`bhx-cart-row ${checked ? 'bhx-cart-row-done' : ''}`}>
+        <input type="checkbox" checked={checked} onChange={() => toggleHave(item.name)} className="h-4 w-4 shrink-0" style={{ accentColor: '#008848' }} aria-label={`Nhà đã có sẵn ${item.name}`} data-testid={`checkbox-bhx-have-${item.name}`} />
+        <span className={`min-w-0 flex-1 truncate text-xs font-bold ${checked ? 'text-muted-foreground line-through' : ''}`}>{item.name}</span>
+        <span className="shrink-0 text-[10px] font-bold text-muted-foreground">{displayQuantity(item)}</span>
+        <span className="shrink-0 text-[10px] font-bold text-primary">{money(priceFor(item.name, item.qty))}</span>
+      </label>; })}</div>
+      <div className="mt-3 border-t border-[hsl(43_31%_90%)] pt-3">
+        <p className="text-xs font-bold">📦 Chi phí nguyên liệu dự toán: <span style={{ color: '#008848' }}>~{money(cartTotal)}</span></p>
+        {cartTotal > 0 && freeshipGap > 0 && <p className="mt-1.5 text-[11px] font-semibold leading-4 text-amber-700" data-testid="text-bhx-freeship-hint">🚚 Mua thêm Đồ khô/Sữa/Gia vị (~{Math.ceil(freeshipGap / 1000)}k) để đạt mốc FREESHIP của Bách Hóa Xanh</p>}
+      </div>
     </div>
+    <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-row sm:flex-wrap">
+      <a href={BACH_HOA_XANH_AFFILIATE_URL} target="_blank" rel="nofollow sponsored noopener" onClick={() => trackEvent('bhx_daily_cart_opened', { day: selectedDay, meal: mealLabel, total: cartTotal })} className="bhx-cta tactile col-span-2 flex items-center justify-center gap-2 py-3.5 text-center text-sm no-underline sm:flex-1 sm:basis-[230px] sm:py-3" data-testid="button-bhx-daily-cart"><ShoppingBasket size={17} /> 🛒 Đặt Bách Hóa Xanh 1-Chạm</a>
+      <div className="relative sm:flex-1 sm:basis-[150px]">
+        <button type="button" onClick={() => setDeliveryOpen((open) => !open)} className="shopping-action-sub tactile flex w-full items-center justify-center gap-1.5" aria-expanded={deliveryOpen} data-testid="button-daily-order-delivery">🛵 ShopeeFood/GrabMart<ChevronDown size={13} className={`shrink-0 transition-transform ${deliveryOpen ? 'rotate-180' : ''}`} /></button>
+        {deliveryOpen && <div className="absolute inset-x-0 top-full z-10 mt-1.5 grid grid-cols-2 gap-1.5 rounded-xl border bg-white p-1.5 shadow-lg" data-testid="panel-daily-delivery-options">
+          <button type="button" onClick={() => sendToDeliveryApp('shopeefood')} className="shopping-action-sub tactile" data-testid="button-daily-send-shopeefood">{sentApp === 'shopeefood' ? <Check size={13} /> : '🛵'} {sentApp === 'shopeefood' ? 'Đã copy!' : 'Shopee'}</button>
+          <button type="button" onClick={() => sendToDeliveryApp('grabmart')} className="shopping-action-sub tactile" data-testid="button-daily-send-grabmart">{sentApp === 'grabmart' ? <Check size={13} /> : '🟩'} {sentApp === 'grabmart' ? 'Đã copy!' : 'Grab'}</button>
+        </div>}
+      </div>
+      <button type="button" onClick={shareDailyList} className="shopping-action-sub tactile text-center leading-tight sm:flex-1 sm:basis-[150px]" data-testid="button-bhx-daily-share-footer">{copied ? <Check size={13} /> : '📋'} {copied ? 'Đã copy!' : 'Gửi Zalo Cho Chồng / Tự Đi Chợ'}</button>
+      <button type="button" onClick={exportChecklistImage} disabled={exporting} className="shopping-action-sub tactile col-span-2 disabled:opacity-60 sm:flex-1 sm:basis-[230px]" data-testid="button-daily-export-checklist">{exporting ? <LoaderCircle size={13} className="animate-spin" /> : '🖨️'} {exporting ? 'Đang tạo ảnh...' : 'Xuất Checklist Dán Tủ Lạnh'}</button>
+    </div>
+    {exportError && <p className="mt-1.5 text-[11px] font-semibold text-red-600">{exportError}</p>}
   </section>;
 }
 
@@ -1358,7 +1439,19 @@ function WeeklyMenuExportCard({ plan, prefs, isPro, totalCost }: { plan: DayPlan
     try {
       const { default: html2canvas } = await import('html2canvas');
       if (document.fonts?.ready) await document.fonts.ready;
-      const canvas = await html2canvas(node, { scale: 2, backgroundColor: '#FAF9F5', useCORS: true, logging: false });
+      // Pin the capture window to the node's own full (auto) size rather than the current
+      // viewport — a `position: fixed` off-screen node used to get its height clamped to
+      // window.innerHeight on short mobile screens, truncating the exported table mid-week.
+      const canvas = await html2canvas(node, {
+        scale: 2,
+        backgroundColor: '#FAF9F5',
+        useCORS: true,
+        logging: false,
+        width: node.scrollWidth,
+        height: node.scrollHeight,
+        windowWidth: node.scrollWidth,
+        windowHeight: node.scrollHeight,
+      });
       const dataUrl = canvas.toDataURL('image/png');
       const link = document.createElement('a');
       link.href = dataUrl;
@@ -1390,7 +1483,10 @@ function WeeklyMenuExportCard({ plan, prefs, isPro, totalCost }: { plan: DayPlan
         <h1 className="menu-infographic-title">THỰC ĐƠN BỮA CƠM {isFullWeek ? 'CẢ TUẦN' : `${plan.length} NGÀY`}<br />CHO GIA ĐÌNH {headcount} NGƯỜI</h1>
         <div className="menu-infographic-meta"><span>🗓️ {dateRangeLabel}</span><span>💰 Dự toán tuần: {money(totalCost)}</span></div>
         <div className="menu-infographic-table">
-          <div className="menu-infographic-row menu-infographic-head"><span>Thứ</span><span>🍖 Món Mặn</span><span>🥬 Món Xào</span><span>🍲 Món Canh</span><span>🌅 Bữa Sáng</span></div>
+          {/* Standardized 4-column structure: Món Chính (Đạm) / Món Rau-Xào (Chất xơ) / Món Canh (Thanh mát) /
+              Bữa Phụ (Món Sáng) — the app has no separate dessert/snack field, so column 4 surfaces the next
+              breakfast as the "bữa phụ" slot rather than mixing it in as an unlabeled 5th category. */}
+          <div className="menu-infographic-row menu-infographic-head"><span>Thứ</span><span>🍖 Món Chính<br />(Đạm)</span><span>🥬 Món Rau/Xào<br />(Chất xơ)</span><span>🍲 Món Canh<br />(Thanh mát)</span><span>🌅 Bữa Phụ<br />(Món Sáng)</span></div>
           {plan.map((day) => {
             const damThumb = dishThumb(day.dinner.dam);
             const rauThumb = dishThumb(day.dinner.rau);
@@ -2012,9 +2108,14 @@ function CustomBagAiCard({ prefs, isPro, onUpgrade }: { prefs: Preferences; isPr
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState('');
   const [aiUsage, setAiUsage] = useState<AiUsage>(readAiUsage);
+  const [dietaryModes, setDietaryModes] = useState<DietaryMode[]>([]);
   const headcount = prefs.adults + prefs.elderly + prefs.kids;
   const aiRemaining = isPro ? null : Math.max(0, FREE_AI_LIMIT - aiUsage.count);
   const hasAiAccess = isPro || aiUsage.count < FREE_AI_LIMIT;
+  const toggleDietaryMode = (mode: DietaryMode) => {
+    setDietaryModes((current) => current.includes(mode) ? current.filter((item) => item !== mode) : [...current, mode]);
+    setAiWeek(null);
+  };
 
   const addItem = (name: string, qty = 300, unit: 'g' | 'kg' = 'g') => {
     const { group, pricePerKg } = classifyBagIngredient(name);
@@ -2058,11 +2159,15 @@ function CustomBagAiCard({ prefs, isPro, onUpgrade }: { prefs: Preferences; isPr
           safety: { kids: prefs.kids, allergies: prefs.allergies, allergyOther: prefs.allergyOther },
           bagIngredients: bagItems.map((item) => ({ name: item.name, amount: item.unit === 'kg' ? `${item.qty}kg` : `${item.qty}g` })),
           dateISO: new Date().toISOString().slice(0, 10),
+          dietaryModes,
+          recentDishesHistory: readRecentDishHistory(),
         }),
       });
       const data = await response.json() as { week?: WeeklyMealTrayResult[]; error?: string };
       if (!response.ok || !data.week) throw new Error(data.error || 'AI chưa ghép được mâm cơm lúc này.');
       setAiWeek(data.week);
+      const mainDishNames = data.week.map((day) => day.dishes.find((dish) => dish.category === 'Món Đạm')?.name).filter((name): name is string => Boolean(name));
+      if (mainDishNames.length) writeRecentDishHistory(mainDishNames);
       if (!isPro) {
         const next = { month: currentMonth(), count: aiUsage.count + 1 };
         window.localStorage.setItem(AI_USAGE_STORAGE_KEY, JSON.stringify(next));
@@ -2109,6 +2214,10 @@ function CustomBagAiCard({ prefs, isPro, onUpgrade }: { prefs: Preferences; isPr
           <span className="text-[11px] font-bold text-muted-foreground">💡 ~{money(estimate.totalCost / BAG_MEALS_PER_WEEK)} / bữa mâm cơm 3 món</span>
         </div>
         {estimate.shortages.length > 0 ? <div className="mt-2 space-y-1.5">{estimate.shortages.map((shortage) => <div key={shortage.group} className="budget-alert-low rounded-xl px-3 py-2 text-[11px] font-bold leading-5" data-testid={`text-bag-shortage-${shortage.group}`}>⚠️ Thiếu {BAG_GROUP_LABELS[shortage.group]} cho khoảng {shortage.missingDays.toFixed(1)} ngày cuối tuần. Gợi ý mua thêm ~{money(shortage.missingCost)} {shortage.topup} để đủ 7 ngày.</div>)}</div> : <div className="budget-alert-high mt-2 rounded-xl px-3 py-2 text-[11px] font-bold leading-5" data-testid="text-bag-surplus">{estimate.surplusDays > 0.4 ? `✅ Túi đồ đủ ăn trong ${Math.floor(estimate.overallDays)} ngày, dư ra ${money(estimate.surplusCost)} có thể trích vào Quỹ Tích Sản 2036.` : '✅ Túi đồ vừa khớp trọn 7 ngày, không dư không thiếu.'}</div>}
+      </div>}
+      {bagItems.length > 0 && <div data-testid="panel-dietary-modes">
+        <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">🎯 Chọn chế độ ưu tiên cho AI (tuỳ chọn, có thể chọn nhiều)</p>
+        <div className="mt-1.5 flex flex-wrap gap-1.5">{DIETARY_MODE_CHIPS.map((chip) => <button key={chip.mode} type="button" onClick={() => toggleDietaryMode(chip.mode)} className={`dietary-mode-chip ${dietaryModes.includes(chip.mode) ? 'dietary-mode-chip-active' : ''}`} aria-pressed={dietaryModes.includes(chip.mode)} data-testid={`chip-dietary-mode-${chip.mode}`}>{chip.emoji} {chip.label}</button>)}</div>
       </div>}
       {bagItems.length > 0 && <div className="flex items-center justify-between gap-2 text-[10px] font-bold text-muted-foreground">
         <span>{isPro ? '👑 AI không giới hạn (Pro)' : `Còn ${aiRemaining}/${FREE_AI_LIMIT} lượt AI miễn phí tháng này`}</span>

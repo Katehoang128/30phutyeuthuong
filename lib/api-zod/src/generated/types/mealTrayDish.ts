@@ -7,10 +7,15 @@
  */
 import type { MealTrayDishCategory } from './mealTrayDishCategory';
 import type { MealTrayIngredient } from './mealTrayIngredient';
+import type { RecipeTag } from './recipeTag';
 
 export interface MealTrayDish {
   category: MealTrayDishCategory;
   name: string;
   portion_hand_rule: string;
   ingredients: MealTrayIngredient[];
+  /** Nhãn Recipe Matrix áp dụng cho món này (Chay, U40_Estrogen, Hàn_Nhật...) */
+  tags?: RecipeTag[];
+  /** Nguyên liệu gây dị ứng có trong món, dùng để Anti-Repetition/Safety Engine hậu kiểm */
+  allergens?: string[];
 }

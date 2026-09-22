@@ -102,12 +102,49 @@ export interface BagIngredientInput {
   amount: string;
 }
 
+/**
+ * Nhãn phân loại trong Kho Món Ăn (Recipe Matrix) dùng để lọc và đa dạng hoá thực đơn
+ */
+export type RecipeTag = typeof RecipeTag[keyof typeof RecipeTag];
+
+
+export const RecipeTag = {
+  Chay: 'Chay',
+  WHO_Healthy: 'WHO_Healthy',
+  U40_Estrogen: 'U40_Estrogen',
+  Trẻ_Nhỏ: 'Trẻ_Nhỏ',
+  Đa_Thế_Hệ: 'Đa_Thế_Hệ',
+  Món_Trend: 'Món_Trend',
+  Hàn_Nhật: 'Hàn_Nhật',
+  Truyền_Thống_3Mien: 'Truyền_Thống_3Mien',
+} as const;
+
+/**
+ * Chế độ & khẩu vị người dùng chọn để Dynamic Cuisine Transformer biến tấu mâm cơm
+ */
+export type DietaryMode = typeof DietaryMode[keyof typeof DietaryMode];
+
+
+export const DietaryMode = {
+  u40_estrogen: 'u40_estrogen',
+  tre_nho_da_the_he: 'tre_nho_da_the_he',
+  chay_thanh_tinh: 'chay_thanh_tinh',
+  doi_vi_a_au: 'doi_vi_a_au',
+} as const;
+
 export interface MealTrayRequest {
   familyProfile: FamilyProfile;
   safety: SafetyContext;
   bagIngredients?: BagIngredientInput[];
   /** Ngày dương lịch hiện tại (YYYY-MM-DD) để tự nhận biết Mùng 1/Rằm âm lịch; mặc định lấy giờ máy chủ nếu bỏ trống */
   dateISO?: string;
+  /** Chế độ & khẩu vị đang bật (có thể chọn nhiều đồng thời, ví dụ U40 + Đa thế hệ) */
+  dietaryModes?: DietaryMode[];
+  /**
+     * Tên các món mặn (Món Đạm) đã dùng trong tối đa 7 ngày gần nhất, cũ nhất trước - mới nhất sau, dùng cho Anti-Repetition Engine
+     * @maxItems 7
+     */
+  recentDishesHistory?: string[];
 }
 
 export interface MealTrayIngredient {
@@ -131,6 +168,10 @@ export interface MealTrayDish {
   name: string;
   portion_hand_rule: string;
   ingredients: MealTrayIngredient[];
+  /** Nhãn Recipe Matrix áp dụng cho món này (Chay, U40_Estrogen, Hàn_Nhật...) */
+  tags?: RecipeTag[];
+  /** Nguyên liệu gây dị ứng có trong món, dùng để Anti-Repetition/Safety Engine hậu kiểm */
+  allergens?: string[];
 }
 
 export interface MealTrayResponse {

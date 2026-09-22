@@ -7,6 +7,7 @@
  */
 
 export * from './bagIngredientInput';
+export * from './dietaryMode';
 export * from './familyProfile';
 export * from './fridgeAnalysisRequest';
 export * from './fridgeAnalysisResponse';
@@ -23,5 +24,6 @@ export * from './nutritionSummary';
 export * from './recipeIngredient';
 export * from './recipeLookupRequest';
 export * from './recipeLookupResponse';
+export * from './recipeTag';
 export * from './safetyContext';
 export * from './weeklyMealTray';

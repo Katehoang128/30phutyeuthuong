@@ -124,6 +124,8 @@ export const generateMealTrayBodyFamilyProfileBudgetPerMealMin = 0;
 
 export const generateMealTrayBodySafetyKidsMin = 0;
 
+export const generateMealTrayBodyRecentDishesHistoryMax = 7;
+
 
 
 export const GenerateMealTrayBody = zod.object({
@@ -142,7 +144,9 @@ export const GenerateMealTrayBody = zod.object({
   "name": zod.string(),
   "amount": zod.string()
 }).describe('Một nguyên liệu người dùng tự nhập ở chế độ Tự Nhập Túi Đồ / Dọn Tủ')).optional(),
-  "dateISO": zod.string().optional().describe('Ngày dương lịch hiện tại (YYYY-MM-DD) để tự nhận biết Mùng 1/Rằm âm lịch; mặc định lấy giờ máy chủ nếu bỏ trống')
+  "dateISO": zod.string().optional().describe('Ngày dương lịch hiện tại (YYYY-MM-DD) để tự nhận biết Mùng 1/Rằm âm lịch; mặc định lấy giờ máy chủ nếu bỏ trống'),
+  "dietaryModes": zod.array(zod.enum(['u40_estrogen', 'tre_nho_da_the_he', 'chay_thanh_tinh', 'doi_vi_a_au']).describe('Chế độ & khẩu vị người dùng chọn để Dynamic Cuisine Transformer biến tấu mâm cơm')).optional().describe('Chế độ & khẩu vị đang bật (có thể chọn nhiều đồng thời, ví dụ U40 + Đa thế hệ)'),
+  "recentDishesHistory": zod.array(zod.string()).max(generateMealTrayBodyRecentDishesHistoryMax).optional().describe('Tên các món mặn (Món Đạm) đã dùng trong tối đa 7 ngày gần nhất, cũ nhất trước - mới nhất sau, dùng cho Anti-Repetition Engine')
 })
 
 export const generateMealTrayResponseTotalEstimatedCostMin = 0;
@@ -169,7 +173,9 @@ export const GenerateMealTrayResponse = zod.object({
   "item": zod.string(),
   "amount": zod.string(),
   "cost": zod.number().int().min(generateMealTrayResponseDishesItemIngredientsItemCostMin)
-}))
+})),
+  "tags": zod.array(zod.enum(['Chay', 'WHO_Healthy', 'U40_Estrogen', 'Trẻ_Nhỏ', 'Đa_Thế_Hệ', 'Món_Trend', 'Hàn_Nhật', 'Truyền_Thống_3Mien']).describe('Nhãn phân loại trong Kho Món Ăn (Recipe Matrix) dùng để lọc và đa dạng hoá thực đơn')).optional().describe('Nhãn Recipe Matrix áp dụng cho món này (Chay, U40_Estrogen, Hàn_Nhật...)'),
+  "allergens": zod.array(zod.string()).optional().describe('Nguyên liệu gây dị ứng có trong món, dùng để Anti-Repetition/Safety Engine hậu kiểm')
 })).min(generateMealTrayResponseDishesMin).max(generateMealTrayResponseDishesMax),
   "tags": zod.array(zod.string())
 })
@@ -187,6 +193,8 @@ export const generateMealWeekBodyFamilyProfileKidsMin = 0;
 export const generateMealWeekBodyFamilyProfileBudgetPerMealMin = 0;
 
 export const generateMealWeekBodySafetyKidsMin = 0;
+
+export const generateMealWeekBodyRecentDishesHistoryMax = 7;
 
 
 
@@ -206,7 +214,9 @@ export const GenerateMealWeekBody = zod.object({
   "name": zod.string(),
   "amount": zod.string()
 }).describe('Một nguyên liệu người dùng tự nhập ở chế độ Tự Nhập Túi Đồ / Dọn Tủ')).optional(),
-  "dateISO": zod.string().optional().describe('Ngày dương lịch hiện tại (YYYY-MM-DD) để tự nhận biết Mùng 1/Rằm âm lịch; mặc định lấy giờ máy chủ nếu bỏ trống')
+  "dateISO": zod.string().optional().describe('Ngày dương lịch hiện tại (YYYY-MM-DD) để tự nhận biết Mùng 1/Rằm âm lịch; mặc định lấy giờ máy chủ nếu bỏ trống'),
+  "dietaryModes": zod.array(zod.enum(['u40_estrogen', 'tre_nho_da_the_he', 'chay_thanh_tinh', 'doi_vi_a_au']).describe('Chế độ & khẩu vị người dùng chọn để Dynamic Cuisine Transformer biến tấu mâm cơm')).optional().describe('Chế độ & khẩu vị đang bật (có thể chọn nhiều đồng thời, ví dụ U40 + Đa thế hệ)'),
+  "recentDishesHistory": zod.array(zod.string()).max(generateMealWeekBodyRecentDishesHistoryMax).optional().describe('Tên các món mặn (Món Đạm) đã dùng trong tối đa 7 ngày gần nhất, cũ nhất trước - mới nhất sau, dùng cho Anti-Repetition Engine')
 })
 
 export const generateMealWeekResponseWeekItemTotalEstimatedCostMin = 0;
@@ -238,7 +248,9 @@ export const GenerateMealWeekResponse = zod.object({
   "item": zod.string(),
   "amount": zod.string(),
   "cost": zod.number().int().min(generateMealWeekResponseWeekItemDishesItemIngredientsItemCostMin)
-}))
+})),
+  "tags": zod.array(zod.enum(['Chay', 'WHO_Healthy', 'U40_Estrogen', 'Trẻ_Nhỏ', 'Đa_Thế_Hệ', 'Món_Trend', 'Hàn_Nhật', 'Truyền_Thống_3Mien']).describe('Nhãn phân loại trong Kho Món Ăn (Recipe Matrix) dùng để lọc và đa dạng hoá thực đơn')).optional().describe('Nhãn Recipe Matrix áp dụng cho món này (Chay, U40_Estrogen, Hàn_Nhật...)'),
+  "allergens": zod.array(zod.string()).optional().describe('Nguyên liệu gây dị ứng có trong món, dùng để Anti-Repetition/Safety Engine hậu kiểm')
 })).min(generateMealWeekResponseWeekItemDishesMin).max(generateMealWeekResponseWeekItemDishesMax),
   "tags": zod.array(zod.string())
 })).min(generateMealWeekResponseWeekMin).max(generateMealWeekResponseWeekMax)

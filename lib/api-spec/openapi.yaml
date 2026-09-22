@@ -306,6 +306,26 @@ components:
       required:
         - name
         - amount
+    RecipeTag:
+      type: string
+      description: Nhãn phân loại trong Kho Món Ăn (Recipe Matrix) dùng để lọc và đa dạng hoá thực đơn
+      enum:
+        - "Chay"
+        - "WHO_Healthy"
+        - "U40_Estrogen"
+        - "Trẻ_Nhỏ"
+        - "Đa_Thế_Hệ"
+        - "Món_Trend"
+        - "Hàn_Nhật"
+        - "Truyền_Thống_3Mien"
+    DietaryMode:
+      type: string
+      description: Chế độ & khẩu vị người dùng chọn để Dynamic Cuisine Transformer biến tấu mâm cơm
+      enum:
+        - "u40_estrogen"
+        - "tre_nho_da_the_he"
+        - "chay_thanh_tinh"
+        - "doi_vi_a_au"
     MealTrayRequest:
       type: object
       properties:
@@ -320,6 +340,17 @@ components:
         dateISO:
           type: string
           description: Ngày dương lịch hiện tại (YYYY-MM-DD) để tự nhận biết Mùng 1/Rằm âm lịch; mặc định lấy giờ máy chủ nếu bỏ trống
+        dietaryModes:
+          type: array
+          items:
+            $ref: "#/components/schemas/DietaryMode"
+          description: Chế độ & khẩu vị đang bật (có thể chọn nhiều đồng thời, ví dụ U40 + Đa thế hệ)
+        recentDishesHistory:
+          type: array
+          items:
+            type: string
+          maxItems: 7
+          description: Tên các món mặn (Món Đạm) đã dùng trong tối đa 7 ngày gần nhất, cũ nhất trước - mới nhất sau, dùng cho Anti-Repetition Engine
       required:
         - familyProfile
         - safety
@@ -351,6 +382,16 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MealTrayIngredient"
+        tags:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecipeTag"
+          description: Nhãn Recipe Matrix áp dụng cho món này (Chay, U40_Estrogen, Hàn_Nhật...)
+        allergens:
+          type: array
+          items:
+            type: string
+          description: Nguyên liệu gây dị ứng có trong món, dùng để Anti-Repetition/Safety Engine hậu kiểm
       required:
         - category
         - name
