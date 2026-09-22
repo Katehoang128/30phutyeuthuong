@@ -328,6 +328,23 @@ function matchesSuggestionMood(dish: Dish, mood: SuggestionMood): boolean {
   const text = normalize(`${dish.name} ${(dish.tags || []).join(' ')}`);
   return SEASON_KEYWORDS[season].some((keyword) => text.includes(keyword));
 }
+// Deterministic per-day shuffle so "Gợi ý hôm nay" rotates which dishes surface as the date changes,
+// while staying stable (no reshuffle jank) across re-renders within the same day.
+function seedFromString(text: string): number {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) hash = (Math.imul(hash, 31) + text.charCodeAt(i)) >>> 0;
+  return hash || 1;
+}
+function seededShuffle<T>(items: T[], seed: number): T[] {
+  const result = [...items];
+  let state = seed;
+  for (let i = result.length - 1; i > 0; i--) {
+    state = (Math.imul(state, 1103515245) + 12345) >>> 0;
+    const j = state % (i + 1);
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
 function dishAllowed(dish: Dish, p: Preferences) {
   const blocked = allergyTerms(p);
   const text = normalize(`${dish.name} ${(dish.allergens || []).join(' ')} ${dish.ing.map((x) => x[0]).join(' ')}`);
@@ -1267,11 +1284,12 @@ function TodaySuggestionCard({ prefs, onApply }: { prefs: Preferences; onApply: 
     { value: 'light', label: '🌱 Ăn nhẹ bụng' },
   ];
   const suggestions = useMemo(() => {
-    const results: { dish: Dish; type: SuggestionSlotType }[] = [];
+    const matches: { dish: Dish; type: SuggestionSlotType }[] = [];
     SUGGESTION_SOURCES.forEach(({ type, pool }) => {
-      poolAllowed(pool, prefs).forEach((dish) => { if (matchesSuggestionMood(dish, mood)) results.push({ dish, type }); });
+      poolAllowed(pool, prefs).forEach((dish) => { if (matchesSuggestionMood(dish, mood)) matches.push({ dish, type }); });
     });
-    return results.slice(0, 8);
+    const daySeed = seedFromString(`${isoDateStr(vietnamTodayDate())}-${mood}`);
+    return seededShuffle(matches, daySeed).slice(0, 8);
   }, [prefs, mood]);
   return <section className="paper-card overflow-hidden p-4 md:p-5" data-testid="today-suggestion-card">
     <div className="flex items-center gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><Sparkles size={17} /></span><div><p className="text-[10px] font-bold uppercase tracking-[.15em] text-primary">Gợi ý hôm nay</p><h3 className="display-font text-lg font-bold leading-tight">Đổi gió cho mâm cơm nhà mình</h3></div></div>
