@@ -294,6 +294,11 @@ function allergyTerms(p: Preferences) {
   const aliases: Record<string, string[]> = { 'tom': ['tom', 'hai san', 'muc'], 'cua/hai san': ['cua', 'tom', 'muc', 'hai san'], 'trung': ['trung'], 'dau nanh': ['dau nanh', 'dau hu'], 'thit bo': ['thit bo'], 'mang': ['mang'], 'nam': ['nam'] };
   return [...p.allergies, ...p.allergyOther.split(',').map((x) => x.trim()).filter(Boolean)].flatMap((x) => aliases[normalize(x)] || [normalize(x)]);
 }
+function poolForSlot(slot: DishSlot): Dish[] {
+  if (slot === 'breakfast') return BREAKFAST;
+  const field = slot.split('.')[1];
+  return field === 'rau' ? RAU : field === 'canh' ? CANH : DAM;
+}
 function dishAllowed(dish: Dish, p: Preferences) {
   const blocked = allergyTerms(p);
   const text = normalize(`${dish.name} ${(dish.allergens || []).join(' ')} ${dish.ing.map((x) => x[0]).join(' ')}`);
@@ -1006,7 +1011,7 @@ function Shell() {
   const swapDish = useCallback((dayIndex: number, slot: DishSlot) => {
     const [meal, field] = slot.split('.');
     const current = meal === 'breakfast' ? plan[dayIndex].breakfast : plan[dayIndex][meal as 'lunch' | 'dinner'][field as keyof MealSet];
-    const pool = meal === 'breakfast' ? BREAKFAST : field === 'rau' ? RAU : field === 'canh' ? CANH : DAM;
+    const pool = poolForSlot(slot);
     const used = new Set<string>();
     plan.forEach((day, index) => {
       const entries = [day.breakfast, day.lunch.dam, day.lunch.rau, day.lunch.canh, day.dinner.dam, day.dinner.rau, day.dinner.canh];
@@ -1030,6 +1035,18 @@ function Shell() {
     setSwapNotice(`Đã đổi “${current.name}” thành “${candidate.name}”. Các món khác được giữ nguyên.`);
     trackEvent('single_dish_swapped', { slot, from: current.name, to: candidate.name });
   }, [plan, prefs, seed]);
+  // Manual pick: user browses the slot's dish pool in DishPickerModal and taps an exact dish,
+  // unlike swapDish's random-candidate reroll above.
+  const pickDish = useCallback((dayIndex: number, slot: DishSlot, dish: Dish) => {
+    const [meal, field] = slot.split('.');
+    const current = meal === 'breakfast' ? plan[dayIndex].breakfast : plan[dayIndex][meal as 'lunch' | 'dinner'][field as keyof MealSet];
+    const next = plan.map((day) => ({ ...day, lunch: { ...day.lunch }, dinner: { ...day.dinner } }));
+    if (meal === 'breakfast') next[dayIndex].breakfast = dish;
+    else next[dayIndex][meal as 'lunch' | 'dinner'][field as keyof MealSet] = dish;
+    setPlan(next);
+    setSwapNotice(`Đã chọn “${dish.name}” thay cho “${current.name}”.`);
+    trackEvent('dish_picked_manually', { slot, from: current.name, to: dish.name });
+  }, [plan]);
   const unlockPro = () => {
     window.localStorage.setItem(PRO_STORAGE_KEY, 'true');
     setIsPro(true);
@@ -1094,7 +1111,7 @@ function Shell() {
   else if (location === '/blog') page = <BlogListPage />;
   else if (location === '/blog/write') page = <BlogWritePage />;
   else if (location.startsWith('/blog/')) page = <BlogPostPage slug={decodeURIComponent(location.slice('/blog/'.length))} />;
-  else page = <HomePage plan={plan} isPro={isPro} onUpgrade={() => openUpgrade('locked_week')} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} totalCost={totalCost} forceBudget={forceBudget} budgetNotice={budgetNotice} swapNotice={swapNotice} onSwapDish={swapDish} spendLog={spendLog} streak={streak} isMealCheckedToday={isMealCheckedToday} onCheckTodayMeal={checkTodayMeal} monthlySavings={monthlySavings} reminderEnabled={reminderEnabled} onEnableReminder={enableReminder} onDisableReminder={disableReminder} />;
+  else page = <HomePage plan={plan} isPro={isPro} onUpgrade={() => openUpgrade('locked_week')} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} totalCost={totalCost} forceBudget={forceBudget} budgetNotice={budgetNotice} swapNotice={swapNotice} onSwapDish={swapDish} onPickDish={pickDish} spendLog={spendLog} streak={streak} isMealCheckedToday={isMealCheckedToday} onCheckTodayMeal={checkTodayMeal} monthlySavings={monthlySavings} reminderEnabled={reminderEnabled} onEnableReminder={enableReminder} onDisableReminder={disableReminder} />;
   return <div className="app-shell grain"><DesktopSidebar location={location} /><header className="site-header border-b border-black/5"><div className="site-header-inner flex items-center justify-between gap-3"><Link href="/" className="site-header-brand flex items-center gap-3 no-underline" data-testid="link-home"><span className="flex h-11 w-11 items-center justify-center rounded-[18px] bg-[linear-gradient(135deg,hsl(113_25%_42%),hsl(113_34%_64%))] text-white shadow-[0_8px_18px_rgba(74,124,89,0.22)]"><ChefHat size={23} strokeWidth={2.4} /></span><span><span className="display-font block text-xl font-bold tracking-tight text-[hsl(113_25%_32%)]">30 Phút</span><span className="block text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">Yêu thương</span></span></Link><div className="top-actions flex items-center gap-2">{isPro ? <span className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-[hsl(31_90%_83%)] px-3 py-1.5 text-xs font-bold text-[hsl(24_28%_18%)]"><Crown size={13} /> Thành viên Pro</span> : <button onClick={() => openUpgrade('header')} className="tactile hidden md:inline-flex items-center gap-1.5 rounded-full bg-[linear-gradient(135deg,hsl(113_25%_42%),hsl(113_34%_64%))] px-3 py-2 text-xs font-bold text-white" data-testid="button-header-upgrade"><Crown size={13} /> Nâng cấp Pro</button>}<button onClick={() => window.print()} className="tactile hidden md:flex h-10 w-10 items-center justify-center rounded-full border border-[hsl(36_40%_88%)] bg-white text-muted-foreground" aria-label="In trang" data-testid="button-print"><Printer size={17} /></button>
 <button onClick={() => setDrawerOpen(true)} className="tactile flex h-11 w-11 items-center justify-center rounded-[18px] border border-[hsl(36_40%_88%)] bg-white text-[hsl(24_30%_17%)] shadow-[0_8px_16px_rgba(110,84,58,0.05)]" data-testid="button-open-drawer" aria-label="Mở menu"><Menu size={19} /></button></div></div></header><main className="content-wrap page-enter">{page}</main><BlogFooter /><BottomNav location={location} /><InstallAppBanner /><MobileDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} isPro={isPro} phone={globalPhone} onUpgrade={() => { setDrawerOpen(false); openUpgrade('drawer'); }} onOpenSettings={() => { if (location !== '/') { setLocation('/'); } setSettingsOpen(true); }} />
 <ProUpgradeModal globalPhone={globalPhone} setGlobalPhone={setGlobalPhone} globalEmail={globalEmail} setGlobalEmail={setGlobalEmail} open={upgradeOpen} onClose={() => setUpgradeOpen(false)} onUnlocked={unlockPro} /></div>;
@@ -1211,10 +1228,11 @@ function SettingsModal({ prefs, setOpen, updatePrefs, saveSettings }: { prefs: P
   </div>;
 }
 
-function ZeroScrollMealPlanner({ plan, prefs, favorites, setFavorites, onSwap }: { plan: DayPlan[]; prefs: Preferences; favorites: Set<string>; setFavorites: (value: Set<string>) => void; onSwap: (dayIndex: number, slot: DishSlot) => void }) {
+function ZeroScrollMealPlanner({ plan, prefs, favorites, setFavorites, onSwap, onPick }: { plan: DayPlan[]; prefs: Preferences; favorites: Set<string>; setFavorites: (value: Set<string>) => void; onSwap: (dayIndex: number, slot: DishSlot) => void; onPick: (dayIndex: number, slot: DishSlot, dish: Dish) => void }) {
   const [, setLocation] = useLocation();
   const [selectedDay, setSelectedDay] = useState(plan[0]?.day || DAY_NAMES[0]);
   const [selectedMeal, setSelectedMeal] = useState<'lunch' | 'dinner' | 'breakfast'>(getCurrentMealType);
+  const [pickerSlot, setPickerSlot] = useState<DishSlot | null>(null);
   useEffect(() => {
     setSelectedDay(plan[0]?.day || DAY_NAMES[0]);
   }, [plan]);
@@ -1244,10 +1262,11 @@ function ZeroScrollMealPlanner({ plan, prefs, favorites, setFavorites, onSwap }:
     </div>
     <div className="paper-card !mb-0 p-3" data-testid="zero-scroll-meal-panel">
       <div className="mb-3 flex items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.14em] text-primary">{selectedDay}</p><h2 className="display-font text-xl font-bold">{mealLabel}</h2></div><span className="rounded-full bg-secondary px-3 py-1.5 text-[11px] font-bold text-secondary-foreground">{day ? `${dishes.length} món` : 'Đang khóa'}</span></div>
-      {day ? <MealGrid dishes={dishes} favorites={favorites} setFavorites={setFavorites} onSwap={(slot) => onSwap(planIndex, slot)} prefs={prefs} /> : <div className="rounded-xl bg-secondary/60 p-5 text-center"><p className="text-sm font-bold">Ngày này đang được khóa</p><p className="mt-1 text-xs text-muted-foreground">Mở khóa Pro để xem trọn thực đơn 7 ngày.</p></div>}
+      {day ? <MealGrid dishes={dishes} favorites={favorites} setFavorites={setFavorites} onSwap={(slot) => onSwap(planIndex, slot)} onPickRequest={setPickerSlot} prefs={prefs} /> : <div className="rounded-xl bg-secondary/60 p-5 text-center"><p className="text-sm font-bold">Ngày này đang được khóa</p><p className="mt-1 text-xs text-muted-foreground">Mở khóa Pro để xem trọn thực đơn 7 ngày.</p></div>}
       <button type="button" onClick={() => { const target = document.getElementById('bhx-daily-cart'); target ? target.scrollIntoView({ behavior: 'smooth', block: 'start' }) : setLocation('/shopping'); }} className="warm-cta mt-3 flex w-full items-center justify-center gap-2 text-center" data-testid="button-meal-shopping"><ShoppingBasket size={17} /> Xem Danh Sách Đi Chợ Cho {selectedMeal === 'dinner' ? 'Bữa Tối' : mealLabel}</button>
     </div>
     {day && <BhxDailyCartCard key={`${selectedDay}-${selectedMeal}`} dishes={dishes} units={units} mealLabel={mealLabel} selectedDay={selectedDay} />}
+    {pickerSlot && day && <DishPickerModal slot={pickerSlot} pool={poolForSlot(pickerSlot)} prefs={prefs} favorites={favorites} currentName={dishes.find((item) => item.slot === pickerSlot)?.dish.name || ''} onClose={() => setPickerSlot(null)} onSelect={(dish) => { onPick(planIndex, pickerSlot, dish); setPickerSlot(null); }} />}
   </section>;
 }
 
@@ -1518,7 +1537,7 @@ function WeeklyMenuExportCard({ plan, prefs, isPro, totalCost }: { plan: DayPlan
   </section>;
 }
 
-function HomePage({ plan, isPro, onUpgrade, prefs, settingsOpen, setSettingsOpen, updatePrefs, saveSettings, regenerate, expandedDay, setExpandedDay, activeMeal, setActiveMeal, favoriteDishes, setFavoriteDishes, totalCost, forceBudget, budgetNotice, swapNotice, onSwapDish, spendLog, streak, isMealCheckedToday, onCheckTodayMeal, monthlySavings, reminderEnabled, onEnableReminder, onDisableReminder }: { plan: DayPlan[]; isPro: boolean; onUpgrade: () => void; prefs: Preferences; settingsOpen: boolean; setSettingsOpen: (value: boolean) => void; updatePrefs: (value: Partial<Preferences>) => void; saveSettings: () => void; regenerate: () => void; expandedDay: number; setExpandedDay: (value: number) => void; activeMeal: 'all' | 'breakfast' | 'lunch' | 'dinner'; setActiveMeal: (value: 'all' | 'breakfast' | 'lunch' | 'dinner') => void; favoriteDishes: Set<string>; setFavoriteDishes: (value: Set<string>) => void; totalCost: number; forceBudget: () => void; budgetNotice: string; swapNotice: string; onSwapDish: (dayIndex: number, slot: DishSlot) => void; spendLog: SpendRecord[]; streak: StreakData; isMealCheckedToday: boolean; onCheckTodayMeal: () => void; monthlySavings: number; reminderEnabled: boolean; onEnableReminder: () => void; onDisableReminder: () => void }) {
+function HomePage({ plan, isPro, onUpgrade, prefs, settingsOpen, setSettingsOpen, updatePrefs, saveSettings, regenerate, expandedDay, setExpandedDay, activeMeal, setActiveMeal, favoriteDishes, setFavoriteDishes, totalCost, forceBudget, budgetNotice, swapNotice, onSwapDish, onPickDish, spendLog, streak, isMealCheckedToday, onCheckTodayMeal, monthlySavings, reminderEnabled, onEnableReminder, onDisableReminder }: { plan: DayPlan[]; isPro: boolean; onUpgrade: () => void; prefs: Preferences; settingsOpen: boolean; setSettingsOpen: (value: boolean) => void; updatePrefs: (value: Partial<Preferences>) => void; saveSettings: () => void; regenerate: () => void; expandedDay: number; setExpandedDay: (value: number) => void; activeMeal: 'all' | 'breakfast' | 'lunch' | 'dinner'; setActiveMeal: (value: 'all' | 'breakfast' | 'lunch' | 'dinner') => void; favoriteDishes: Set<string>; setFavoriteDishes: (value: Set<string>) => void; totalCost: number; forceBudget: () => void; budgetNotice: string; swapNotice: string; onSwapDish: (dayIndex: number, slot: DishSlot) => void; onPickDish: (dayIndex: number, slot: DishSlot, dish: Dish) => void; spendLog: SpendRecord[]; streak: StreakData; isMealCheckedToday: boolean; onCheckTodayMeal: () => void; monthlySavings: number; reminderEnabled: boolean; onEnableReminder: () => void; onDisableReminder: () => void }) {
   const today = plan[0];
   const visiblePlan = isPro ? plan : plan.slice(0, FREE_DAY_LIMIT);
   const units = unitsOf(prefs);
@@ -1528,7 +1547,7 @@ function HomePage({ plan, isPro, onUpgrade, prefs, settingsOpen, setSettingsOpen
     <div className="compact-message" aria-label="Thông điệp bếp"><span>🌿 Nấu nhanh một chút, thương nhau nhiều hơn.</span></div>
     {settingsOpen && <SettingsModal prefs={prefs} setOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} />}
     <div className="hidden md:block"><MindfulKitchenMessage /></div>
-    <ZeroScrollMealPlanner plan={visiblePlan} prefs={prefs} favorites={favoriteDishes} setFavorites={setFavoriteDishes} onSwap={onSwapDish} />
+    <ZeroScrollMealPlanner plan={visiblePlan} prefs={prefs} favorites={favoriteDishes} setFavorites={setFavoriteDishes} onSwap={onSwapDish} onPick={onPickDish} />
     <WeeklyMenuExportCard plan={visiblePlan} prefs={prefs} isPro={isPro} totalCost={totalCost} />
     <button type="button" onClick={() => setSettingsOpen(true)} className="settings-launch tactile flex w-full items-center justify-between rounded-2xl border bg-card px-4 py-3 text-left shadow-sm" data-testid="button-toggle-settings"><span className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><SlidersHorizontal size={17} /></span><span><span className="block text-sm font-bold">Thiết lập nhà mình</span><span className="block text-xs text-muted-foreground">{prefs.kids} trẻ nhỏ · {prefs.elderly} người già · {prefs.adults} người lớn</span></span></span><ChevronDown size={18} className="text-muted-foreground" /></button>
     <section className="hidden">
@@ -1817,10 +1836,54 @@ function RecipeCardExporter({ dish, units }: { dish: Dish; units: number }) {
   </>;
 }
 function DishRow({ dish, favorite, onFavorite, onSwap }: { dish: Dish; favorite: boolean; onFavorite: () => void; onSwap?: () => void }) { const n = nutrition(dish); const steps = cookingSteps(dish); return <div className="rounded-[16px] border border-[hsl(36_40%_90%)] bg-[#FFFDF8] p-3 shadow-[0_10px_20px_rgba(86,51,22,0.04)]"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-sm font-bold leading-5 text-foreground">{dish.name}</p><div className="mt-1 flex flex-wrap gap-1.5">{(dish.tags || []).slice(0, 2).map((tag) => <span key={tag} className="rounded-full border border-[hsl(36_40%_88%)] bg-white px-2 py-0.5 text-[10px] font-bold text-muted-foreground">{tag}</span>)}<span className="rounded-full bg-[hsl(43_100%_61%/.18)] px-2 py-0.5 text-[10px] font-bold text-foreground">{Math.round(n.cal)} kcal</span></div></div><div className="flex shrink-0 items-center gap-1.5"><button onClick={onSwap} className="flex h-11 items-center gap-1.5 rounded-full border border-[hsl(113_25%_52%)] bg-white px-3 text-[11px] font-bold text-[hsl(113_25%_36%)] shadow-sm" aria-label="🔄 Đổi món này" data-testid={`button-swap-${dish.name}`} title="🔄 Đổi món này"><RefreshCw size={13} /> <span className="hidden sm:inline">Đổi món</span></button><button onClick={onFavorite} className={`flex h-11 w-11 items-center justify-center rounded-full border ${favorite ? 'border-[hsl(113_25%_36%)] bg-[hsl(113_25%_36%)] text-white' : 'border-[hsl(36_40%_88%)] bg-white text-muted-foreground'}`} aria-label="Đánh dấu món yêu thích" data-testid={`button-favorite-${dish.name}`}><Heart size={15} fill={favorite ? 'currentColor' : 'none'} /></button></div></div><details className="mt-3 border-t border-[hsl(36_40%_90%)] pt-2"><summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-bold text-[hsl(113_25%_36%)]"><ChefHat size={14} /> Hướng dẫn nấu</summary><ol className="mt-2 space-y-1.5 pl-5 text-xs leading-5 text-muted-foreground">{steps.map((step, index) => <li key={`${dish.name}-step-${index}`} className="pl-1">{step}</li>)}</ol></details></div>; }
-function MealGrid({ dishes, favorites, setFavorites, onSwap, prefs }: { dishes: { dish: Dish; slot: DishSlot }[]; favorites: Set<string>; setFavorites: (value: Set<string>) => void; onSwap: (slot: DishSlot) => void; prefs: Preferences }) {
+function MealGrid({ dishes, favorites, setFavorites, onSwap, onPickRequest, prefs }: { dishes: { dish: Dish; slot: DishSlot }[]; favorites: Set<string>; setFavorites: (value: Set<string>) => void; onSwap: (slot: DishSlot) => void; onPickRequest: (slot: DishSlot) => void; prefs: Preferences }) {
   const groupLabels = ['Món đạm', 'Món rau', 'Món canh'];
   const units = unitsOf(prefs);
-  return <div className="meal-grid-wrap"><div className="meal-grid">{dishes.map(({ dish, slot }, index) => { const thumb = dishThumb(dish); return <article key={slot} className="meal-grid-card"><div className="meal-grid-top"><span className="meal-grid-thumb" style={{ background: thumb.bg }} aria-hidden="true">{thumb.emoji}</span><p className="meal-grid-group">{groupLabels[index] || 'Món ăn'}</p></div><p className="meal-grid-name">{dish.name}</p><div className="flex flex-wrap items-center gap-1"><span className="meal-grid-kcal">{Math.round(nutrition(dish).cal)} kcal</span>{dish.veg && <span className="meal-grid-veg">🌱 Chay</span>}</div><div className="meal-grid-actions"><button type="button" onClick={() => onSwap(slot)} className="meal-grid-action" aria-label={`Đổi ${dish.name}`} data-testid={`button-grid-swap-${dish.name}`}><RefreshCw size={13} /> Đổi</button><button type="button" onClick={() => { const next = new Set(favorites); next.has(dish.name) ? next.delete(dish.name) : next.add(dish.name); setFavorites(next); }} className={`meal-grid-favorite ${favorites.has(dish.name) ? 'is-favorite' : ''}`} aria-label={`Yêu thích ${dish.name}`} data-testid={`button-grid-favorite-${dish.name}`}><Heart size={15} fill={favorites.has(dish.name) ? 'currentColor' : 'none'} /></button></div></article>; })}</div><details className="meal-guide"><summary>📖 Xem hướng dẫn nấu {dishes.length} món này</summary><div className="meal-guide-content">{dishes.map(({ dish }) => <div key={dish.name}><strong>{dish.name}</strong><ol>{cookingSteps(dish).map((step) => <li key={step}>{step}</li>)}</ol><RecipeCardExporter dish={dish} units={units} /></div>)}</div></details></div>;
+  return <div className="meal-grid-wrap"><div className="meal-grid">{dishes.map(({ dish, slot }, index) => { const thumb = dishThumb(dish); return <article key={slot} className="meal-grid-card"><button type="button" onClick={() => onPickRequest(slot)} className="flex w-full flex-1 flex-col items-start border-0 bg-transparent p-0 text-left" aria-label={`Chọn món khác cho ${groupLabels[index] || 'món ăn'}: ${dish.name}`} data-testid={`button-grid-pick-${dish.name}`}><div className="meal-grid-top w-full"><span className="meal-grid-thumb" style={{ background: thumb.bg }} aria-hidden="true">{thumb.emoji}</span><p className="meal-grid-group">{groupLabels[index] || 'Món ăn'}</p><Search size={11} className="ml-auto shrink-0 text-muted-foreground/60" aria-hidden="true" /></div><p className="meal-grid-name">{dish.name}</p><div className="flex flex-wrap items-center gap-1"><span className="meal-grid-kcal">{Math.round(nutrition(dish).cal)} kcal</span>{dish.veg && <span className="meal-grid-veg">🌱 Chay</span>}</div></button><div className="meal-grid-actions"><button type="button" onClick={() => onSwap(slot)} className="meal-grid-action" aria-label={`Đổi ${dish.name}`} data-testid={`button-grid-swap-${dish.name}`}><RefreshCw size={13} /> Đổi</button><button type="button" onClick={() => { const next = new Set(favorites); next.has(dish.name) ? next.delete(dish.name) : next.add(dish.name); setFavorites(next); }} className={`meal-grid-favorite ${favorites.has(dish.name) ? 'is-favorite' : ''}`} aria-label={`Yêu thích ${dish.name}`} data-testid={`button-grid-favorite-${dish.name}`}><Heart size={15} fill={favorites.has(dish.name) ? 'currentColor' : 'none'} /></button></div></article>; })}</div><details className="meal-guide"><summary>📖 Xem hướng dẫn nấu {dishes.length} món này</summary><div className="meal-guide-content">{dishes.map(({ dish }) => <div key={dish.name}><strong>{dish.name}</strong><ol>{cookingSteps(dish).map((step) => <li key={step}>{step}</li>)}</ol><RecipeCardExporter dish={dish} units={units} /></div>)}</div></details></div>;
+}
+// Catalog browser for one meal slot: lets the user tick an exact dish instead of relying on the
+// random reroll in swapDish, filtered by "nhu cầu" (need) — chay/yêu thích/phong cách ẩm thực.
+function DishPickerModal({ slot, pool, prefs, favorites, currentName, onSelect, onClose }: { slot: DishSlot; pool: Dish[]; prefs: Preferences; favorites: Set<string>; currentName: string; onSelect: (dish: Dish) => void; onClose: () => void }) {
+  const [query, setQuery] = useState('');
+  const [styleFilter, setStyleFilter] = useState<'all' | 'veg' | 'favorite' | CuisineFilter>('all');
+  const base = useMemo(() => poolAllowed(pool, prefs), [pool, prefs]);
+  const results = useMemo(() => {
+    const q = normalize(query.trim());
+    return base.filter((dish) => {
+      if (styleFilter === 'veg' && !dish.veg) return false;
+      if (styleFilter === 'favorite' && !favorites.has(dish.name)) return false;
+      if (styleFilter !== 'all' && styleFilter !== 'veg' && styleFilter !== 'favorite' && (dish.cuisineStyle || 'truyen-thong') !== styleFilter) return false;
+      if (!q) return true;
+      const text = normalize(`${dish.name} ${(dish.tags || []).join(' ')} ${dish.ing.map((item) => item[0]).join(' ')}`);
+      return text.includes(q);
+    });
+  }, [base, query, styleFilter, favorites]);
+  const slotLabel = slot === 'breakfast' ? 'Bữa Sáng' : slot.endsWith('.dam') ? 'Món Đạm' : slot.endsWith('.rau') ? 'Món Rau' : 'Món Canh';
+  const chips: { value: 'all' | 'veg' | 'favorite' | CuisineFilter; label: string }[] = [
+    { value: 'all', label: '🍽️ Tất cả' },
+    { value: 'veg', label: '🌱 Chay' },
+    { value: 'favorite', label: '❤️ Yêu thích' },
+    { value: 'truyen-thong', label: '🏠 Truyền Thống' },
+    { value: 'dac-san-3-mien', label: '🇻🇳 Đặc Sản 3 Miền' },
+    { value: 'han-nhat', label: '🍱 Hàn - Nhật' },
+    { value: 'au-my', label: '🍝 Âu - Mỹ' },
+  ];
+  return <div className="settings-modal fixed inset-0 z-[75] flex items-end justify-center bg-foreground/45 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="dish-picker-title" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <div className="settings-modal-panel flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-t-[24px] bg-card shadow-2xl sm:rounded-[24px]">
+      <div className="flex items-start justify-between gap-3 border-b px-4 py-4"><div><p className="text-[10px] font-bold uppercase tracking-[.16em] text-primary">Chọn món</p><h2 id="dish-picker-title" className="display-font text-xl font-bold">{slotLabel}</h2></div><button type="button" onClick={onClose} className="rounded-full p-2 text-muted-foreground hover:bg-muted" aria-label="Đóng chọn món"><X size={19} /></button></div>
+      <div className="border-b p-3">
+        <div className="relative"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm món, nguyên liệu..." className="w-full rounded-xl border bg-background py-2.5 pl-9 pr-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-dish-picker-search" /></div>
+        <div className="mt-2.5 flex gap-2 overflow-x-auto pb-1" role="tablist">{chips.map((chip) => <button type="button" key={chip.value} onClick={() => setStyleFilter(chip.value)} className={`shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-bold ${styleFilter === chip.value ? 'border-primary bg-secondary text-primary' : 'bg-card text-muted-foreground'}`} role="tab" aria-selected={styleFilter === chip.value} data-testid={`button-dish-picker-filter-${chip.value}`}>{chip.label}</button>)}</div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        {results.length === 0 ? <p className="p-4 text-center text-sm text-muted-foreground">Không tìm thấy món phù hợp. Thử bỏ bớt bộ lọc nhé.</p> : <div className="space-y-2">{results.map((dish) => { const thumb = dishThumb(dish); const isCurrent = dish.name === currentName; return <button type="button" key={dish.name} onClick={() => onSelect(dish)} className={`flex w-full items-center gap-3 rounded-xl border p-2.5 text-left transition-colors ${isCurrent ? 'border-primary bg-secondary' : 'bg-card hover:bg-accent/40'}`} data-testid={`button-dish-picker-option-${dish.name}`}>
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-xl" style={{ background: thumb.bg }} aria-hidden="true">{thumb.emoji}</span>
+          <span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold text-foreground">{dish.name}{isCurrent && <span className="ml-1.5 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary">Đang dùng</span>}</span><span className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground"><span>{Math.round(nutrition(dish).cal)} kcal</span><span>·</span><span>{dish.time} phút</span>{dish.veg && <span>· 🌱 Chay</span>}</span></span>
+          {favorites.has(dish.name) && <Heart size={14} className="shrink-0 text-primary" fill="currentColor" />}
+        </button>; })}</div>}
+      </div>
+    </div>
+  </div>;
 }
 
 function TodayCard({ day, prefs }: { day: DayPlan; prefs: Preferences }) {

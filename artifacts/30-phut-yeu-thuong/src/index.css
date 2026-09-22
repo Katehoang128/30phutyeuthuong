@@ -130,7 +130,12 @@
 
 .app-shell { min-height: 100dvh; overflow-x: clip; background: radial-gradient(circle at 8% 0%, rgba(244,184,143,.32), transparent 26rem), radial-gradient(circle at 96% 18%, rgba(250,216,138,.18), transparent 22rem), linear-gradient(180deg, #fffaf4 0%, #f7efe5 100%); }
 .content-wrap { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding-bottom: 106px; }
-.page-enter { animation: rise-in .38s ease both; }
+/* No "both" fill-mode: the "to" keyframe (opacity:1, translateY(0)) already matches the element's
+   base style, so dropping fill-mode is visually identical once the animation ends — but it stops the
+   computed transform from lingering after completion, which otherwise turns <main> into a containing
+   block for every position:fixed descendant (modals rendered inside {page}), pinning them to <main>'s
+   box instead of the viewport. */
+.page-enter { animation: rise-in .38s ease; }
 .display-font { font-family: var(--app-font-serif); }
 .paper-card { background: var(--bg-card); border: 1px solid var(--card-border-soft); box-shadow: 0 4px 12px rgba(0, 0, 0, .05); border-radius: 16px; padding: 16px; margin-bottom: 16px; }
 .warm-cta { background: var(--accent-orange); color: #FFFFFF; border-radius: 25px; font-size: 16px; font-weight: 700; padding: 12px 20px; transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease; }
