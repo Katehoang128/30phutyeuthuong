@@ -299,6 +299,35 @@ function poolForSlot(slot: DishSlot): Dish[] {
   const field = slot.split('.')[1];
   return field === 'rau' ? RAU : field === 'canh' ? CANH : DAM;
 }
+// "Gợi ý hôm nay" card: season/mood buckets built from tags/cuisineStyle the dish bank already
+// carries, so no new data-entry work is needed per dish.
+type SuggestionSlotType = 'breakfast' | 'dam' | 'rau' | 'canh';
+type SuggestionMood = 'season' | 'trending' | 'twist' | 'light';
+const SUGGESTION_SOURCES: { type: SuggestionSlotType; pool: Dish[] }[] = [
+  { type: 'breakfast', pool: BREAKFAST },
+  { type: 'dam', pool: DAM },
+  { type: 'rau', pool: RAU },
+  { type: 'canh', pool: CANH },
+];
+function currentSeasonVN(): 'nong' | 'lanh' {
+  const month = vietnamTodayDate().getUTCMonth() + 1;
+  return month >= 4 && month <= 9 ? 'nong' : 'lanh';
+}
+const SEASON_KEYWORDS: Record<'nong' | 'lanh', string[]> = {
+  nong: ['thanh mat', 'giai nhiet', 'it beo', 'nhe bung', 'mat'],
+  lanh: ['am bung', 'kho', 'ham'],
+};
+// Hand-curated placeholder for "đang hot" — there's no live trend/analytics feed wired into the
+// client yet, so refresh this list by hand occasionally rather than expecting it to update itself.
+const TRENDING_DISH_NAMES = new Set(['Cá hồi áp chảo ít dầu', 'Gà kho gừng mềm', 'Tôm nướng/chiên không dầu', 'Bò xào cải thìa ít dầu', 'Bông cải xanh xào nấm', 'Canh kim chi đậu hũ', 'Yến mạch sữa chuối']);
+function matchesSuggestionMood(dish: Dish, mood: SuggestionMood): boolean {
+  if (mood === 'trending') return TRENDING_DISH_NAMES.has(dish.name);
+  if (mood === 'twist') return Boolean(dish.cuisineStyle);
+  if (mood === 'light') return Boolean(dish.veg) || (dish.tags || []).some((tag) => ['Dễ tiêu', 'Thanh nhẹ', 'Nhẹ bụng', 'Thanh mát'].includes(tag));
+  const season = currentSeasonVN();
+  const text = normalize(`${dish.name} ${(dish.tags || []).join(' ')}`);
+  return SEASON_KEYWORDS[season].some((keyword) => text.includes(keyword));
+}
 function dishAllowed(dish: Dish, p: Preferences) {
   const blocked = allergyTerms(p);
   const text = normalize(`${dish.name} ${(dish.allergens || []).join(' ')} ${dish.ing.map((x) => x[0]).join(' ')}`);
@@ -1228,6 +1257,33 @@ function SettingsModal({ prefs, setOpen, updatePrefs, saveSettings }: { prefs: P
   </div>;
 }
 
+function TodaySuggestionCard({ prefs, onApply }: { prefs: Preferences; onApply: (dish: Dish, type: SuggestionSlotType) => void }) {
+  const [mood, setMood] = useState<SuggestionMood>('season');
+  const season = currentSeasonVN();
+  const moodChips: { value: SuggestionMood; label: string }[] = [
+    { value: 'season', label: season === 'nong' ? '☀️ Theo mùa: thanh mát' : '❄️ Theo mùa: ấm bụng' },
+    { value: 'trending', label: '🔥 Đang Hot' },
+    { value: 'twist', label: '🍜 Đổi vị lạ miệng' },
+    { value: 'light', label: '🌱 Ăn nhẹ bụng' },
+  ];
+  const suggestions = useMemo(() => {
+    const results: { dish: Dish; type: SuggestionSlotType }[] = [];
+    SUGGESTION_SOURCES.forEach(({ type, pool }) => {
+      poolAllowed(pool, prefs).forEach((dish) => { if (matchesSuggestionMood(dish, mood)) results.push({ dish, type }); });
+    });
+    return results.slice(0, 8);
+  }, [prefs, mood]);
+  return <section className="paper-card overflow-hidden p-4 md:p-5" data-testid="today-suggestion-card">
+    <div className="flex items-center gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><Sparkles size={17} /></span><div><p className="text-[10px] font-bold uppercase tracking-[.15em] text-primary">Gợi ý hôm nay</p><h3 className="display-font text-lg font-bold leading-tight">Đổi gió cho mâm cơm nhà mình</h3></div></div>
+    <div className="mt-3 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Chọn kiểu gợi ý">{moodChips.map((chip) => <button type="button" key={chip.value} onClick={() => setMood(chip.value)} className={`shrink-0 rounded-full border px-3.5 py-2 text-xs font-bold ${mood === chip.value ? 'border-primary bg-secondary text-primary' : 'bg-card text-muted-foreground'}`} role="tab" aria-selected={mood === chip.value} data-testid={`button-suggestion-mood-${chip.value}`}>{chip.label}</button>)}</div>
+    {suggestions.length === 0 ? <p className="mt-3 text-xs leading-5 text-muted-foreground">Chưa có món phù hợp bộ lọc này trong hồ sơ hiện tại, thử mục gợi ý khác nhé.</p> : <div className="mt-3 flex gap-2.5 overflow-x-auto pb-1">{suggestions.map(({ dish, type }) => { const thumb = dishThumb(dish); return <div key={`${type}-${dish.name}`} className="flex w-[132px] shrink-0 flex-col rounded-2xl border border-[hsl(36_40%_90%)] bg-[#FFFDF8] p-2.5" data-testid={`card-suggestion-${dish.name}`}>
+      <span className="flex h-14 w-14 shrink-0 items-center justify-center self-center rounded-xl text-2xl" style={{ background: thumb.bg }} aria-hidden="true">{thumb.emoji}</span>
+      <p className="mt-2 line-clamp-2 text-center text-xs font-bold leading-4 text-foreground">{dish.name}</p>
+      <p className="mt-1 text-center text-[10px] font-bold text-muted-foreground">{Math.round(nutrition(dish).cal)} kcal</p>
+      <button type="button" onClick={() => onApply(dish, type)} className="mt-2 rounded-full bg-primary/10 px-2 py-1.5 text-[10px] font-bold text-primary" data-testid={`button-suggestion-apply-${dish.name}`}>+ Thêm vào {type === 'breakfast' ? 'sáng' : 'trưa'} nay</button>
+    </div>; })}</div>}
+  </section>;
+}
 function ZeroScrollMealPlanner({ plan, prefs, favorites, setFavorites, onSwap, onPick }: { plan: DayPlan[]; prefs: Preferences; favorites: Set<string>; setFavorites: (value: Set<string>) => void; onSwap: (dayIndex: number, slot: DishSlot) => void; onPick: (dayIndex: number, slot: DishSlot, dish: Dish) => void }) {
   const [, setLocation] = useLocation();
   const [selectedDay, setSelectedDay] = useState(plan[0]?.day || DAY_NAMES[0]);
@@ -1547,6 +1603,7 @@ function HomePage({ plan, isPro, onUpgrade, prefs, settingsOpen, setSettingsOpen
     <div className="compact-message" aria-label="Thông điệp bếp"><span>🌿 Nấu nhanh một chút, thương nhau nhiều hơn.</span></div>
     {settingsOpen && <SettingsModal prefs={prefs} setOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} />}
     <div className="hidden md:block"><MindfulKitchenMessage /></div>
+    <TodaySuggestionCard prefs={prefs} onApply={(dish, type) => onPickDish(0, type === 'breakfast' ? 'breakfast' : (`lunch.${type}` as DishSlot), dish)} />
     <ZeroScrollMealPlanner plan={visiblePlan} prefs={prefs} favorites={favoriteDishes} setFavorites={setFavoriteDishes} onSwap={onSwapDish} onPick={onPickDish} />
     <WeeklyMenuExportCard plan={visiblePlan} prefs={prefs} isPro={isPro} totalCost={totalCost} />
     <button type="button" onClick={() => setSettingsOpen(true)} className="settings-launch tactile flex w-full items-center justify-between rounded-2xl border bg-card px-4 py-3 text-left shadow-sm" data-testid="button-toggle-settings"><span className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><SlidersHorizontal size={17} /></span><span><span className="block text-sm font-bold">Thiết lập nhà mình</span><span className="block text-xs text-muted-foreground">{prefs.kids} trẻ nhỏ · {prefs.elderly} người già · {prefs.adults} người lớn</span></span></span><ChevronDown size={18} className="text-muted-foreground" /></button>
