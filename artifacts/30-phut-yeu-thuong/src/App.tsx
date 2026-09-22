@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Link, Router as WouterRouter, useLocation } from 'wouter';
-import { AlertCircle, ArrowUpRight, BadgeCheck, BookOpen, CalendarDays, Camera, Check, ChefHat, ChevronDown, ChevronUp, CircleHelp, Clock3, Copy, Crown, Download, ExternalLink, Heart, ImagePlus, Leaf, LoaderCircle, LockKeyhole, Mail, MessageCircle, Minus, Plus, Printer, QrCode, RefreshCw, Search, Send, Share2, ShoppingBasket, SlidersHorizontal, Smartphone, Sparkles, Trash2, Upload, Users, Utensils, WalletCards, X , Menu, User, Settings, ArrowRight } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, BadgeCheck, BookOpen, CalendarDays, Camera, Check, ChefHat, ChevronDown, ChevronUp, CircleHelp, Clock3, Copy, Crown, Download, ExternalLink, Heart, ImagePlus, Leaf, LoaderCircle, LockKeyhole, Mail, MessageCircle, Minus, Pencil, Plus, Printer, QrCode, RefreshCw, Search, Send, Share2, ShoppingBasket, SlidersHorizontal, Smartphone, Sparkles, Trash2, Upload, Users, Utensils, WalletCards, X , Menu, User, Settings, ArrowRight } from 'lucide-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -10,6 +10,9 @@ import { trackEvent } from './analytics';
 // they're dynamically import()'d there instead of statically here, keeping them out of the main bundle
 // for the many visitors who never tap "Xuất ảnh thực đơn".
 import { BREAKFAST, CANH, DAM, DAILY_TARGET, DAY_NAMES, Dish, NUTRITION_PER_100G, PANTRY_COST, PRICE, RAU, RICE_PER_UNIT, SHOPPING_AFFILIATE_LINKS } from './data';
+// Same dynamic-import-heavy-dependency pattern as html2canvas/qrcode above: Tiptap only ever needs
+// to load for the one person (Kate) writing a blog post, never for readers or the rest of the app.
+const RichTextEditor = lazy(() => import('./blog-editor'));
 
 const queryClient = new QueryClient();
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -49,6 +52,7 @@ const PRO_ANNUAL_PRICE = 399_000;
 const PRO_STORAGE_KEY = '30phut-pro-unlocked';
 const AI_USAGE_STORAGE_KEY = '30phut-ai-usage';
 const RECENT_DISH_HISTORY_KEY = '30phut-recent-main-dishes';
+const BLOG_ADMIN_TOKEN_KEY = '30phut-blog-admin-token';
 const NEWSLETTER_STORAGE_KEY = '30phut-newsletter-email';
 const PREFS_STORAGE_KEY = '30phut-preferences';
 const PLAN_STORAGE_KEY = '30phut-plan';
@@ -1087,6 +1091,9 @@ function Shell() {
   if (location === '/shopping') page = <ShoppingPageV2 shopping={shopping} bought={bought} setBought={setBought} customItems={customItems} setCustomItems={setCustomItems} totalCost={totalCost} targetBudget={prefs.targetBudget || 1200000} prefs={prefs} spendLog={spendLog} onRecordSpend={recordActualSpend} isPro={isPro} onUpgrade={() => openUpgrade('meal_pairing_ai')} />;
   else if (location === '/costs') page = <div className="space-y-5"><CostsPage shopping={shopping} prefs={prefs} totalCost={totalCost} plan={accessiblePlan} spendLog={spendLog} /><KitchenEquityCard weeklySaving={Math.max(0, (prefs.targetBudget || 1200000) - totalCost)} /></div>;
   else if (location === '/ask-ai') page = <AskAiPageV2 prefs={prefs} isPro={isPro} onUpgrade={() => openUpgrade('ai_limit')} />;
+  else if (location === '/blog') page = <BlogListPage />;
+  else if (location === '/blog/write') page = <BlogWritePage />;
+  else if (location.startsWith('/blog/')) page = <BlogPostPage slug={decodeURIComponent(location.slice('/blog/'.length))} />;
   else page = <HomePage plan={plan} isPro={isPro} onUpgrade={() => openUpgrade('locked_week')} prefs={prefs} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} updatePrefs={updatePrefs} saveSettings={saveSettings} regenerate={regenerate} expandedDay={expandedDay} setExpandedDay={setExpandedDay} activeMeal={activeMeal} setActiveMeal={setActiveMeal} favoriteDishes={favoriteDishes} setFavoriteDishes={setFavoriteDishes} totalCost={totalCost} forceBudget={forceBudget} budgetNotice={budgetNotice} swapNotice={swapNotice} onSwapDish={swapDish} spendLog={spendLog} streak={streak} isMealCheckedToday={isMealCheckedToday} onCheckTodayMeal={checkTodayMeal} monthlySavings={monthlySavings} reminderEnabled={reminderEnabled} onEnableReminder={enableReminder} onDisableReminder={disableReminder} />;
   return <div className="app-shell grain"><DesktopSidebar location={location} /><header className="site-header border-b border-black/5"><div className="site-header-inner flex items-center justify-between gap-3"><Link href="/" className="site-header-brand flex items-center gap-3 no-underline" data-testid="link-home"><span className="flex h-11 w-11 items-center justify-center rounded-[18px] bg-[linear-gradient(135deg,hsl(113_25%_42%),hsl(113_34%_64%))] text-white shadow-[0_8px_18px_rgba(74,124,89,0.22)]"><ChefHat size={23} strokeWidth={2.4} /></span><span><span className="display-font block text-xl font-bold tracking-tight text-[hsl(113_25%_32%)]">30 Phút</span><span className="block text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">Yêu thương</span></span></Link><div className="top-actions flex items-center gap-2">{isPro ? <span className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-[hsl(31_90%_83%)] px-3 py-1.5 text-xs font-bold text-[hsl(24_28%_18%)]"><Crown size={13} /> Thành viên Pro</span> : <button onClick={() => openUpgrade('header')} className="tactile hidden md:inline-flex items-center gap-1.5 rounded-full bg-[linear-gradient(135deg,hsl(113_25%_42%),hsl(113_34%_64%))] px-3 py-2 text-xs font-bold text-white" data-testid="button-header-upgrade"><Crown size={13} /> Nâng cấp Pro</button>}<button onClick={() => window.print()} className="tactile hidden md:flex h-10 w-10 items-center justify-center rounded-full border border-[hsl(36_40%_88%)] bg-white text-muted-foreground" aria-label="In trang" data-testid="button-print"><Printer size={17} /></button>
 <button onClick={() => setDrawerOpen(true)} className="tactile flex h-11 w-11 items-center justify-center rounded-[18px] border border-[hsl(36_40%_88%)] bg-white text-[hsl(24_30%_17%)] shadow-[0_8px_16px_rgba(110,84,58,0.05)]" data-testid="button-open-drawer" aria-label="Mở menu"><Menu size={19} /></button></div></div></header><main className="content-wrap page-enter">{page}</main><BlogFooter /><BottomNav location={location} /><InstallAppBanner /><MobileDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} isPro={isPro} phone={globalPhone} onUpgrade={() => { setDrawerOpen(false); openUpgrade('drawer'); }} onOpenSettings={() => { if (location !== '/') { setLocation('/'); } setSettingsOpen(true); }} />
@@ -2448,7 +2455,235 @@ function RecipeResultCard({ result }: { result: RecipeAiResult }) {
   return <section className="paper-card p-5 md:p-6"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-primary">Công thức 1 khẩu phần</p><h2 className="display-font mt-1 text-3xl font-bold">{result.dishName}</h2></div><span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-secondary px-3 py-2 text-xs font-bold"><Clock3 size={14} /> Nhạt · ít dầu</span></div><div className="mt-5 grid gap-5 lg:grid-cols-[.8fr_1.2fr]"><div><p className="text-xs font-bold uppercase tracking-[.12em] text-muted-foreground">Định lượng nguyên liệu</p><ul className="mt-3 divide-y rounded-2xl border bg-background">{result.ingredients.map((ingredient) => <li key={ingredient.name} className="flex justify-between gap-3 px-3 py-2.5 text-sm"><span>{ingredient.name}</span><span className="font-bold text-primary">{ingredient.amount}</span></li>)}</ul><div className="mt-4"><NutritionSummaryCard nutrition={result.nutrition} /></div></div><div><p className="text-xs font-bold uppercase tracking-[.12em] text-muted-foreground">Các bước nấu</p><ol className="mt-3 space-y-3">{result.steps.map((step, index) => <li key={step} className="flex gap-3 text-sm leading-6"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-primary text-xs font-bold text-primary-foreground">{index + 1}</span><span>{step}</span></li>)}</ol></div></div>{result.safetyNotes.length > 0 && <div className="mt-5 rounded-2xl bg-secondary/70 p-4"><p className="text-xs font-bold uppercase tracking-[.12em] text-secondary-foreground">Lưu ý cho nhà mình</p><ul className="mt-2 space-y-1 text-sm leading-5">{result.safetyNotes.map((note) => <li key={note}>• {note}</li>)}</ul></div>}</section>;
 }
 
-function DesktopSidebar({ location }: { location: string }) { const items = [{ href: '/', label: 'Thực Đơn', icon: CalendarDays }, { href: '/shopping', label: 'Đi Chợ', icon: ShoppingBasket }, { href: '/costs', label: 'Chi Phí', icon: WalletCards }, { href: '/ask-ai', label: 'Bếp AI', icon: Sparkles }]; return <aside className="desktop-sidebar" aria-label="Điều hướng chính"><Link href="/" className="desktop-sidebar-brand no-underline" data-testid="link-sidebar-home"><span className="desktop-sidebar-mark"><ChefHat size={22} /></span><span><strong>30 Phút</strong><small>Yêu thương</small></span></Link><nav className="desktop-sidebar-nav">{items.map(({ href, label, icon: Icon }) => { const active = href === '/' ? location === '/' : location.startsWith(href); return <Link key={href} href={href} aria-current={active ? 'page' : undefined} className={`desktop-sidebar-item ${active ? 'desktop-sidebar-item-active' : ''}`} data-testid={`link-sidebar-${label}`}><Icon size={19} /><span>{label}</span></Link>; })}</nav></aside>; }
+// ---- Blog ----------------------------------------------------------------------------------
+type BlogPostSummary = { slug: string; title: string; excerpt: string; coverImageUrl: string | null; publishedAt: string | null };
+type BlogPostFull = BlogPostSummary & { contentHtml: string; published: boolean; createdAt: string; updatedAt: string };
+
+function slugifyVi(text: string): string {
+  return text
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/đ/gi, 'd')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 160);
+}
+function formatBlogDate(iso: string | null): string {
+  if (!iso) return 'Bản nháp';
+  return new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(iso));
+}
+
+function BlogListPage() {
+  const [posts, setPosts] = useState<BlogPostSummary[] | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    document.title = 'Blog — 30 Phút Yêu Thương';
+    let active = true;
+    fetch(apiUrl('/api/blog/posts'))
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((data: BlogPostSummary[]) => { if (active) setPosts(data); })
+      .catch(() => { if (active) setError('Chưa tải được danh sách bài viết. Bạn thử lại sau ít giây nhé.'); });
+    return () => { active = false; };
+  }, []);
+  return <div className="space-y-5">
+    <section className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
+      <div><p className="text-xs font-bold uppercase tracking-[.17em] text-primary">Blog</p><h1 className="display-font mt-1 text-4xl font-bold tracking-tight">Góc chia sẻ của 30 Phút Yêu Thương</h1><p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Bếp núc, vén khéo và chăm sóc gia đình — những điều mình đã học và muốn kể lại.</p></div>
+    </section>
+    {error && <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground" data-testid="text-blog-list-error">{error}</p>}
+    {posts === null && !error && <p className="text-sm text-muted-foreground">Đang tải...</p>}
+    {posts && posts.length === 0 && <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground" data-testid="text-blog-list-empty">Chưa có bài viết nào. Quay lại sau nhé!</p>}
+    {posts && posts.length > 0 && <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{posts.map((post) => <Link key={post.slug} href={`/blog/${post.slug}`} className="paper-card group flex flex-col overflow-hidden !mb-0 no-underline" data-testid={`link-blog-post-${post.slug}`}>
+      {post.coverImageUrl && <img src={post.coverImageUrl} alt="" className="-mx-4 -mt-4 mb-3 h-40 w-[calc(100%+2rem)] max-w-none object-cover" loading="lazy" />}
+      <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{formatBlogDate(post.publishedAt)}</p>
+      <h2 className="display-font mt-1 text-lg font-bold leading-snug text-foreground group-hover:text-primary">{post.title}</h2>
+      {post.excerpt && <p className="mt-2 line-clamp-3 text-sm leading-5 text-muted-foreground">{post.excerpt}</p>}
+    </Link>)}</div>}
+  </div>;
+}
+
+function BlogPostPage({ slug }: { slug: string }) {
+  const [post, setPost] = useState<BlogPostFull | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    setPost(null);
+    setError('');
+    fetch(apiUrl(`/api/blog/posts/${encodeURIComponent(slug)}`))
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((data: BlogPostFull) => { if (active) setPost(data); })
+      .catch(() => { if (active) setError('Không tìm thấy bài viết này, có thể đường dẫn đã thay đổi.'); });
+    return () => { active = false; };
+  }, [slug]);
+  useEffect(() => {
+    if (!post) return;
+    document.title = `${post.title} — 30 Phút Yêu Thương`;
+    let meta = document.querySelector('meta[name="description"]');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.setAttribute('name', 'description');
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute('content', post.excerpt || post.title);
+  }, [post]);
+  if (error) return <div className="space-y-5"><p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground" data-testid="text-blog-post-error">{error}</p><Link href="/blog" className="tactile inline-flex w-fit items-center gap-2 rounded-full border bg-card px-4 py-2.5 text-xs font-bold no-underline" data-testid="link-blog-back">← Về danh sách blog</Link></div>;
+  if (!post) return <p className="text-sm text-muted-foreground">Đang tải...</p>;
+  return <article className="space-y-5">
+    <Link href="/blog" className="inline-flex w-fit items-center gap-1.5 text-xs font-bold text-muted-foreground no-underline hover:text-primary" data-testid="link-blog-back">← Về danh sách blog</Link>
+    {post.coverImageUrl && <img src={post.coverImageUrl} alt="" className="max-h-[360px] w-full rounded-2xl object-cover" />}
+    <div><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{formatBlogDate(post.publishedAt)}</p><h1 className="display-font mt-1 text-3xl font-bold tracking-tight md:text-4xl">{post.title}</h1></div>
+    <div className="prose prose-neutral max-w-none prose-headings:font-bold prose-a:text-primary prose-img:rounded-xl" dangerouslySetInnerHTML={{ __html: post.contentHtml }} />
+  </article>;
+}
+
+const BLANK_BLOG_FORM = { title: '', slug: '', excerpt: '', coverImageUrl: '', contentHtml: '', published: false };
+
+function BlogWritePage() {
+  const [token, setToken] = useState(() => window.localStorage.getItem(BLOG_ADMIN_TOKEN_KEY) || '');
+  const [tokenInput, setTokenInput] = useState('');
+  const [posts, setPosts] = useState<BlogPostFull[] | null>(null);
+  const [listError, setListError] = useState('');
+  const [editingSlug, setEditingSlug] = useState<string | 'new' | null>(null);
+  const [form, setForm] = useState(BLANK_BLOG_FORM);
+  const [slugTouched, setSlugTouched] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
+
+  const authHeaders = useMemo(() => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }), [token]);
+
+  const loadPosts = useCallback(() => {
+    if (!token) return;
+    setListError('');
+    fetch(apiUrl('/api/blog/admin/posts'), { headers: authHeaders })
+      .then((response) => {
+        if (response.status === 403) { window.localStorage.removeItem(BLOG_ADMIN_TOKEN_KEY); setToken(''); throw new Error('Token không đúng.'); }
+        return response.ok ? response.json() : Promise.reject();
+      })
+      .then((data: BlogPostFull[]) => setPosts(data))
+      .catch(() => setListError('Chưa tải được danh sách bài viết.'));
+  }, [token, authHeaders]);
+
+  useEffect(() => { loadPosts(); }, [loadPosts]);
+
+  const saveToken = () => {
+    if (!tokenInput.trim()) return;
+    window.localStorage.setItem(BLOG_ADMIN_TOKEN_KEY, tokenInput.trim());
+    setToken(tokenInput.trim());
+    setTokenInput('');
+  };
+  const logout = () => {
+    window.localStorage.removeItem(BLOG_ADMIN_TOKEN_KEY);
+    setToken('');
+    setPosts(null);
+    setEditingSlug(null);
+  };
+  const startNew = () => {
+    setForm(BLANK_BLOG_FORM);
+    setSlugTouched(false);
+    setFormError('');
+    setEditingSlug('new');
+  };
+  const startEdit = (post: BlogPostFull) => {
+    setForm({ title: post.title, slug: post.slug, excerpt: post.excerpt, coverImageUrl: post.coverImageUrl || '', contentHtml: post.contentHtml, published: post.published });
+    setSlugTouched(true);
+    setFormError('');
+    setEditingSlug(post.slug);
+  };
+  const cancelEdit = () => setEditingSlug(null);
+
+  const updateTitle = (title: string) => setForm((current) => ({ ...current, title, slug: slugTouched ? current.slug : slugifyVi(title) }));
+
+  const save = async (publish: boolean) => {
+    if (!form.title.trim() || !form.slug.trim() || !form.contentHtml.trim() || form.contentHtml === '<p></p>') {
+      setFormError('Cần có tiêu đề, đường dẫn (slug) và nội dung trước khi lưu.');
+      return;
+    }
+    setSaving(true);
+    setFormError('');
+    const isNew = editingSlug === 'new';
+    const payload = { title: form.title.trim(), slug: slugifyVi(form.slug), excerpt: form.excerpt.trim(), coverImageUrl: form.coverImageUrl.trim(), contentHtml: form.contentHtml, published: publish };
+    try {
+      const response = await fetch(apiUrl(isNew ? '/api/blog/posts' : `/api/blog/posts/${encodeURIComponent(editingSlug as string)}`), {
+        method: isNew ? 'POST' : 'PUT',
+        headers: authHeaders,
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Chưa lưu được bài viết.');
+      trackEvent(isNew ? 'blog_post_created' : 'blog_post_updated', { published: publish });
+      setEditingSlug(null);
+      loadPosts();
+    } catch (caught) {
+      setFormError(caught instanceof Error ? caught.message : 'Chưa lưu được bài viết.');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const remove = async (slug: string) => {
+    if (!window.confirm('Xoá bài viết này? Không thể hoàn tác.')) return;
+    try {
+      await fetch(apiUrl(`/api/blog/posts/${encodeURIComponent(slug)}`), { method: 'DELETE', headers: authHeaders });
+      trackEvent('blog_post_deleted', {});
+      loadPosts();
+    } catch {
+      setListError('Chưa xoá được bài viết.');
+    }
+  };
+
+  if (!token) {
+    return <div className="mx-auto max-w-sm space-y-4 pt-10">
+      <div className="text-center"><LockKeyhole size={32} className="mx-auto text-primary" /><h1 className="display-font mt-3 text-2xl font-bold">Khu vực quản trị Blog</h1><p className="mt-1 text-sm text-muted-foreground">Nhập token quản trị để viết hoặc sửa bài.</p></div>
+      <input type="password" value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && saveToken()} placeholder="Token quản trị" className="w-full rounded-xl border bg-background px-3 py-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-blog-admin-token" />
+      <button onClick={saveToken} className="tactile w-full rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground" data-testid="button-blog-admin-login">Xác nhận</button>
+    </div>;
+  }
+
+  if (editingSlug) {
+    return <div className="space-y-5">
+      <div className="flex items-center justify-between gap-3">
+        <button onClick={cancelEdit} className="inline-flex items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-primary" data-testid="button-blog-cancel-edit">← Quay lại danh sách</button>
+      </div>
+      <section className="paper-card space-y-3 p-5">
+        <input value={form.title} onChange={(event) => updateTitle(event.target.value)} placeholder="Tiêu đề bài viết" className="w-full rounded-xl border bg-background px-3 py-3 text-lg font-bold outline-none ring-primary focus:ring-2" data-testid="input-blog-title" />
+        <div className="flex items-center gap-2 text-xs text-muted-foreground"><span className="shrink-0">30phutyeuthuong.com/blog/</span><input value={form.slug} onChange={(event) => { setSlugTouched(true); setForm((current) => ({ ...current, slug: event.target.value })); }} onBlur={() => setForm((current) => ({ ...current, slug: slugifyVi(current.slug) }))} className="min-w-0 flex-1 rounded-lg border bg-background px-2 py-1.5 font-mono outline-none ring-primary focus:ring-2" data-testid="input-blog-slug" /></div>
+        <textarea value={form.excerpt} onChange={(event) => setForm((current) => ({ ...current, excerpt: event.target.value }))} placeholder="Mô tả ngắn (hiện ở trang danh sách và khi chia sẻ)" rows={2} className="w-full resize-none rounded-xl border bg-background px-3 py-2.5 text-sm outline-none ring-primary focus:ring-2" data-testid="input-blog-excerpt" />
+        <input value={form.coverImageUrl} onChange={(event) => setForm((current) => ({ ...current, coverImageUrl: event.target.value }))} placeholder="URL ảnh bìa (tuỳ chọn)" className="w-full rounded-xl border bg-background px-3 py-2.5 text-sm outline-none ring-primary focus:ring-2" data-testid="input-blog-cover-image" />
+        <Suspense fallback={<div className="rounded-xl border bg-background p-4 text-sm text-muted-foreground">Đang tải trình soạn thảo...</div>}>
+          <RichTextEditor key={editingSlug} content={form.contentHtml} onChange={(html) => setForm((current) => ({ ...current, contentHtml: html }))} />
+        </Suspense>
+        {formError && <p className="text-xs font-bold text-destructive" data-testid="text-blog-form-error">⚠️ {formError}</p>}
+        <div className="flex flex-wrap gap-2 pt-1">
+          <button onClick={() => save(false)} disabled={saving} className="tactile rounded-xl border bg-card px-4 py-2.5 text-xs font-bold disabled:opacity-60" data-testid="button-blog-save-draft">{saving ? 'Đang lưu...' : '💾 Lưu bản nháp'}</button>
+          <button onClick={() => save(true)} disabled={saving} className="tactile rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground disabled:opacity-60" data-testid="button-blog-publish">{saving ? 'Đang lưu...' : '🚀 Đăng bài'}</button>
+          {editingSlug !== 'new' && <button onClick={() => remove(editingSlug)} className="tactile ml-auto rounded-xl border border-destructive/30 px-4 py-2.5 text-xs font-bold text-destructive" data-testid="button-blog-delete">Xoá bài</button>}
+        </div>
+      </section>
+    </div>;
+  }
+
+  return <div className="space-y-5">
+    <section className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
+      <div><p className="text-xs font-bold uppercase tracking-[.17em] text-primary">Quản trị</p><h1 className="display-font mt-1 text-3xl font-bold tracking-tight">Bài viết Blog</h1></div>
+      <div className="flex gap-2">
+        <button onClick={logout} className="tactile inline-flex items-center gap-2 rounded-full border bg-card px-4 py-2.5 text-xs font-bold" data-testid="button-blog-logout">Đăng xuất</button>
+        <button onClick={startNew} className="tactile inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground" data-testid="button-blog-new"><Plus size={14} /> Bài mới</button>
+      </div>
+    </section>
+    {listError && <p className="rounded-xl border border-dashed p-4 text-center text-sm text-muted-foreground">{listError}</p>}
+    {posts === null && !listError && <p className="text-sm text-muted-foreground">Đang tải...</p>}
+    {posts && posts.length === 0 && <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">Chưa có bài viết nào. Bấm "Bài mới" để bắt đầu.</p>}
+    {posts && posts.length > 0 && <div className="space-y-2">{posts.map((post) => <div key={post.slug} className="paper-card flex items-center justify-between gap-3 !mb-0 p-4" data-testid={`row-blog-post-${post.slug}`}>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2"><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${post.published ? 'bg-secondary text-secondary-foreground' : 'bg-muted text-muted-foreground'}`}>{post.published ? 'Đã đăng' : 'Nháp'}</span><span className="text-[10px] font-bold text-muted-foreground">{formatBlogDate(post.publishedAt)}</span></div>
+        <p className="mt-1 truncate text-sm font-bold">{post.title}</p>
+      </div>
+      <button onClick={() => startEdit(post)} className="tactile shrink-0 rounded-full border bg-card p-2.5 text-muted-foreground hover:text-primary" aria-label={`Sửa ${post.title}`} data-testid={`button-blog-edit-${post.slug}`}><Pencil size={15} /></button>
+    </div>)}</div>}
+  </div>;
+}
+
+function DesktopSidebar({ location }: { location: string }) { const items = [{ href: '/', label: 'Thực Đơn', icon: CalendarDays }, { href: '/shopping', label: 'Đi Chợ', icon: ShoppingBasket }, { href: '/costs', label: 'Chi Phí', icon: WalletCards }, { href: '/ask-ai', label: 'Bếp AI', icon: Sparkles }, { href: '/blog', label: 'Blog', icon: BookOpen }]; return <aside className="desktop-sidebar" aria-label="Điều hướng chính"><Link href="/" className="desktop-sidebar-brand no-underline" data-testid="link-sidebar-home"><span className="desktop-sidebar-mark"><ChefHat size={22} /></span><span><strong>30 Phút</strong><small>Yêu thương</small></span></Link><nav className="desktop-sidebar-nav">{items.map(({ href, label, icon: Icon }) => { const active = href === '/' ? location === '/' : location.startsWith(href); return <Link key={href} href={href} aria-current={active ? 'page' : undefined} className={`desktop-sidebar-item ${active ? 'desktop-sidebar-item-active' : ''}`} data-testid={`link-sidebar-${label}`}><Icon size={19} /><span>{label}</span></Link>; })}</nav></aside>; }
 
 function BottomNav({ location }: { location: string }) { const items = [{ href: '/', label: 'Thực Đơn', icon: CalendarDays }, { href: '/shopping', label: 'Đi Chợ', icon: ShoppingBasket }, { href: '/costs', label: 'Chi Phí', icon: WalletCards }, { href: '/ask-ai', label: 'Bếp AI', icon: Sparkles }]; return <nav aria-label="Điều hướng chính" className="bottom-nav safe-bottom fixed inset-x-0 bottom-0 z-[9999] px-2 pt-1"><div className="mx-auto grid h-[65px] max-w-xl grid-cols-4 gap-1">{items.map(({ href, label, icon: Icon }) => { const active = href === '/' ? location === '/' : location.startsWith(href); return <Link key={href} href={href} aria-current={active ? 'page' : undefined} className={`nav-item flex h-full flex-col items-center justify-center gap-1 px-1.5 py-2 ${active ? 'nav-item-active' : 'nav-item-inactive'}`} data-testid={`link-nav-${label}`}><Icon size={18} strokeWidth={active ? 2.6 : 2} /><span>{label}</span></Link>; })}</div></nav>; }
 
@@ -2529,6 +2764,11 @@ function MobileDrawer({ open, onClose, isPro, phone, onUpgrade, onOpenSettings }
               <ExternalLink size={16} className="text-muted-foreground" />
             </a>
             
+            <Link href="/blog" onClick={onClose} className="flex min-h-[44px] w-full items-center justify-between rounded-xl p-3 no-underline hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary" data-testid="link-drawer-app-blog">
+              <span className="flex items-center gap-3 text-sm font-bold text-foreground"><BookOpen size={18} className="text-muted-foreground" /> ✍️ Blog</span>
+              <ArrowRight size={16} className="text-muted-foreground" />
+            </Link>
+
             <a href="https://35to53.com" target="_blank" rel="noopener noreferrer" className="flex min-h-[44px] w-full items-center justify-between rounded-xl p-3 hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary" data-testid="link-drawer-blog">
               <span className="flex items-center gap-3 text-sm font-bold text-foreground"><BookOpen size={18} className="text-muted-foreground" /> 📖 Góc Thảnh Thơi (35to53.com)</span>
               <ExternalLink size={16} className="text-muted-foreground" />
