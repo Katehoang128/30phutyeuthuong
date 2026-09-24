@@ -1303,6 +1303,10 @@ function SettingsModal({ prefs, setOpen, updatePrefs, saveSettings }: { prefs: P
 
 function TodaySuggestionCard({ prefs, onApply }: { prefs: Preferences; onApply: (dish: Dish, type: SuggestionSlotType) => void }) {
   const [mood, setMood] = useState<SuggestionMood>('season');
+  // Collapsed by default to keep the menu planner near the top; the choice is remembered per device.
+  const [open, setOpen] = useState(() => { try { return window.localStorage.getItem('30phut-suggestion-open') === 'true'; } catch { return false; } });
+  const [addedKey, setAddedKey] = useState<string | null>(null);
+  const toggleOpen = () => setOpen((current) => { const next = !current; try { window.localStorage.setItem('30phut-suggestion-open', String(next)); } catch { /* ignore */ } return next; });
   const season = currentSeasonVN();
   const moodChips: { value: SuggestionMood; label: string }[] = [
     { value: 'season', label: season === 'nong' ? '☀️ Theo mùa: thanh mát' : '❄️ Theo mùa: ấm bụng' },
@@ -1318,15 +1322,28 @@ function TodaySuggestionCard({ prefs, onApply }: { prefs: Preferences; onApply: 
     const daySeed = seedFromString(`${isoDateStr(vietnamTodayDate())}-${mood}`);
     return seededShuffle(matches, daySeed).slice(0, 8);
   }, [prefs, mood]);
-  return <section className="paper-card overflow-hidden p-4 md:p-5" data-testid="today-suggestion-card">
-    <div className="flex items-center gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><Sparkles size={17} /></span><div><p className="text-[10px] font-bold uppercase tracking-[.15em] text-primary">Gợi ý hôm nay</p><h3 className="display-font text-lg font-bold leading-tight">Đổi gió cho mâm cơm nhà mình</h3></div></div>
-    <div className="mt-3 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Chọn kiểu gợi ý">{moodChips.map((chip) => <button type="button" key={chip.value} onClick={() => setMood(chip.value)} className={`shrink-0 rounded-full border px-3.5 py-2 text-xs font-bold ${mood === chip.value ? 'border-primary bg-secondary text-primary' : 'bg-card text-muted-foreground'}`} role="tab" aria-selected={mood === chip.value} data-testid={`button-suggestion-mood-${chip.value}`}>{chip.label}</button>)}</div>
-    {suggestions.length === 0 ? <p className="mt-3 text-xs leading-5 text-muted-foreground">Chưa có món phù hợp bộ lọc này trong hồ sơ hiện tại, thử mục gợi ý khác nhé.</p> : <div className="mt-3 flex gap-2.5 overflow-x-auto pb-1">{suggestions.map(({ dish, type }) => { const thumb = dishThumb(dish); return <div key={`${type}-${dish.name}`} className="flex w-[132px] shrink-0 flex-col rounded-2xl border border-[hsl(36_40%_90%)] bg-[#FFFDF8] p-2.5" data-testid={`card-suggestion-${dish.name}`}>
-      <span className="flex h-14 w-14 shrink-0 items-center justify-center self-center rounded-xl text-2xl" style={{ background: thumb.bg }} aria-hidden="true">{thumb.emoji}</span>
-      <p className="mt-2 line-clamp-2 text-center text-xs font-bold leading-4 text-foreground">{dish.name}</p>
-      <p className="mt-1 text-center text-[10px] font-bold text-muted-foreground">{Math.round(nutrition(dish).cal)} kcal</p>
-      <button type="button" onClick={() => onApply(dish, type)} className="mt-2 rounded-full bg-primary/10 px-2 py-1.5 text-[10px] font-bold text-primary" data-testid={`button-suggestion-apply-${dish.name}`}>+ Thêm vào {type === 'breakfast' ? 'sáng' : 'trưa'} nay</button>
-    </div>; })}</div>}
+  const applySuggestion = (dish: Dish, type: SuggestionSlotType) => {
+    onApply(dish, type);
+    const key = `${type}-${dish.name}`;
+    setAddedKey(key);
+    window.setTimeout(() => setAddedKey((current) => (current === key ? null : current)), 2200);
+  };
+  return <section className="paper-card overflow-hidden" data-testid="today-suggestion-card">
+    <button type="button" onClick={toggleOpen} className="flex w-full items-center gap-3 p-4 text-left md:p-5" aria-expanded={open} data-testid="button-suggestion-toggle">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><Sparkles size={17} /></span>
+      <span className="min-w-0 flex-1"><span className="block text-[10px] font-bold uppercase tracking-[.15em] text-primary">Gợi ý hôm nay</span><span className="display-font block truncate text-lg font-bold leading-tight">{open ? 'Đổi gió cho mâm cơm nhà mình' : suggestions.slice(0, 3).map(({ dish }) => dish.name).join(' · ') || 'Đổi gió cho mâm cơm nhà mình'}</span></span>
+      {!open && <span className="hidden shrink-0 items-center gap-1 sm:flex" aria-hidden="true">{suggestions.slice(0, 3).map(({ dish, type }) => <span key={`${type}-${dish.name}`} className="flex h-8 w-8 items-center justify-center rounded-lg text-base" style={{ background: dishThumb(dish).bg }}>{dishThumb(dish).emoji}</span>)}</span>}
+      <ChevronDown size={18} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+    </button>
+    {open && <div className="border-t px-4 pb-4 pt-3 md:px-5 md:pb-5">
+      <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Chọn kiểu gợi ý">{moodChips.map((chip) => <button type="button" key={chip.value} onClick={() => setMood(chip.value)} className={`shrink-0 rounded-full border px-3.5 py-2 text-xs font-bold ${mood === chip.value ? 'border-primary bg-secondary text-primary' : 'bg-card text-muted-foreground'}`} role="tab" aria-selected={mood === chip.value} data-testid={`button-suggestion-mood-${chip.value}`}>{chip.label}</button>)}</div>
+      {suggestions.length === 0 ? <p className="mt-3 text-xs leading-5 text-muted-foreground">Chưa có món phù hợp bộ lọc này trong hồ sơ hiện tại, thử mục gợi ý khác nhé.</p> : <div className="mt-3 flex gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:grid md:grid-cols-4 md:overflow-visible">{suggestions.map(({ dish, type }) => { const thumb = dishThumb(dish); const key = `${type}-${dish.name}`; const added = addedKey === key; return <div key={key} className="flex w-[132px] shrink-0 flex-col rounded-2xl border border-[hsl(36_40%_90%)] bg-[#FFFDF8] p-2.5 md:w-auto" data-testid={`card-suggestion-${dish.name}`}>
+        <span className="flex h-14 w-14 shrink-0 items-center justify-center self-center rounded-xl text-2xl" style={{ background: thumb.bg }} aria-hidden="true">{thumb.emoji}</span>
+        <p className="mt-2 line-clamp-2 min-h-8 text-center text-xs font-bold leading-4 text-foreground">{dish.name}</p>
+        <p className="mt-1 text-center text-[10px] font-bold text-muted-foreground">{Math.round(nutrition(dish).cal)} kcal</p>
+        <button type="button" onClick={() => applySuggestion(dish, type)} className={`mt-auto rounded-full px-2 py-1.5 text-[11px] font-bold transition-colors ${added ? 'bg-primary text-primary-foreground' : 'bg-primary/10 text-primary'}`} data-testid={`button-suggestion-apply-${dish.name}`}>{added ? '✓ Đã thêm' : `+ ${type === 'breakfast' ? 'Sáng nay' : 'Trưa nay'}`}</button>
+      </div>; })}</div>}
+    </div>}
   </section>;
 }
 function ZeroScrollMealPlanner({ plan, prefs, favorites, setFavorites, onSwap, onPick }: { plan: DayPlan[]; prefs: Preferences; favorites: Set<string>; setFavorites: (value: Set<string>) => void; onSwap: (dayIndex: number, slot: DishSlot) => void; onPick: (dayIndex: number, slot: DishSlot, dish: Dish) => void }) {
