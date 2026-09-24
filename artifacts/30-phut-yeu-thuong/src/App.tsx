@@ -676,6 +676,7 @@ function getCategory(name: string) {
 }
 const BACH_HOA_XANH_AFFILIATE_URL = 'https://www.bachhoaxanh.com/khuyen-mai/gian-hang-affiliate-ct5001239?kol=9163HOANGTHICUC&utm_campaign=affiliate&utm_content=9163HOANGTHICUC';
 const ZALO_GROUP_URL = 'https://zalo.me/g/2obzl3fbbbaienldhm7m';
+const SHOPEEFOOD_AFFILIATE_URL = 'https://spf.shopee.vn/3LR53xD3AY';
 const DRY_ITEMS = ['Gạo','Bún','Bánh','Mì','Yến mạch','Đậu xanh','Tôm khô','Nước mắm','Muối','Tiêu','Dầu ăn','Dầu ô liu'];
 function shoppingGroup(name: string): 'fresh' | 'dry' {
   return DRY_ITEMS.some((item) => name.includes(item)) ? 'dry' : 'fresh';
@@ -1414,7 +1415,7 @@ function BhxDailyCartCard({ dishes, units, mealLabel, selectedDay }: { dishes: {
     }
   };
   const sendToDeliveryApp = async (app: 'shopeefood' | 'grabmart') => {
-    const url = app === 'shopeefood' ? 'https://shopeefood.vn/' : 'https://food.grab.com/vn/vi/grabmart/';
+    const url = app === 'shopeefood' ? SHOPEEFOOD_AFFILIATE_URL : 'https://food.grab.com/vn/vi/grabmart/';
     try { await copyTextToClipboard(buildDailyListText()); } catch { /* ignore */ }
     trackEvent('daily_cart_send_to_delivery_app', { app, day: selectedDay, meal: mealLabel });
     window.open(url, '_blank', 'noopener');
@@ -2181,7 +2182,7 @@ function ShoppingActionOptions({ freshItems, dryItems, customItems, totalCost, c
   const totalItems = freshItems.length + dryItems.length + customItems.length;
 
   const sendToDeliveryApp = async (app: 'shopeefood' | 'grabmart') => {
-    const url = app === 'shopeefood' ? 'https://shopeefood.vn/' : 'https://food.grab.com/vn/vi/grabmart/';
+    const url = app === 'shopeefood' ? SHOPEEFOOD_AFFILIATE_URL : 'https://food.grab.com/vn/vi/grabmart/';
     try { await copyTextToClipboard(buildListText()); } catch { /* ignore */ }
     trackEvent('shopping_send_to_delivery_app', { app });
     window.open(url, '_blank', 'noopener');
