@@ -319,7 +319,33 @@ const SEASON_KEYWORDS: Record<'nong' | 'lanh', string[]> = {
 };
 // Hand-curated placeholder for "đang hot" — there's no live trend/analytics feed wired into the
 // client yet, so refresh this list by hand occasionally rather than expecting it to update itself.
-const TRENDING_DISH_NAMES = new Set(['Cá hồi áp chảo ít dầu', 'Gà kho gừng mềm', 'Tôm nướng/chiên không dầu', 'Bò xào cải thìa ít dầu', 'Bông cải xanh xào nấm', 'Canh kim chi đậu hũ', 'Yến mạch sữa chuối']);
+// Each name must match a dish name in data.ts exactly (BREAKFAST/DAM/RAU/CANH), comma after every
+// line including the last one.
+const TRENDING_DISH_NAMES = new Set([
+  'Cá hồi áp chảo ít dầu',
+  'Gà kho gừng mềm',
+  'Tôm nướng/chiên không dầu',
+  'Bò xào cải thìa ít dầu',
+  'Bông cải xanh xào nấm',
+  'Canh kim chi đậu hũ',
+  'Yến mạch sữa chuối',
+  // Nồi chiên không dầu
+  'Ức gà nướng/chiên không dầu',
+  'Cá basa nướng giấy bạc',
+  'Đậu hũ chiên không dầu giòn',
+  // Hàn - Nhật đổi vị
+  'Cá thu sốt Teriyaki',
+  'Trứng cuộn rong biển',
+  'Canh rong biển thịt bằm',
+  // Âu tinh gọn / healthy
+  'Salad ức gà sốt mè rang',
+  'Mì Ý sốt bò bằm',
+  'Súp kem bí đỏ',
+  // Đặc sản đưa cơm
+  'Kho quẹt rau luộc',
+  'Canh sấu thịt bằm',
+  'Gà kho sả ớt nhẹ',
+]);
 function matchesSuggestionMood(dish: Dish, mood: SuggestionMood): boolean {
   if (mood === 'trending') return TRENDING_DISH_NAMES.has(dish.name);
   if (mood === 'twist') return Boolean(dish.cuisineStyle);
