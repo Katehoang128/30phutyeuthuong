@@ -192,6 +192,20 @@
 .shopping-action-primary .shopping-action-icon { background: rgba(255, 255, 255, .2); }
 .shopping-action-sub { display: flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--card-border-soft); border-radius: 12px; background: #fff; padding: 9px 10px; font-size: 12px; font-weight: 700; color: var(--text-main); }
 .shopping-action-sub:hover { border-color: var(--primary-green); background: rgba(45, 90, 39, .06); }
+/* Brand-coloured variants of .shopping-action-sub: tinted fill + coloured border + dark coloured text keeps contrast high. */
+.shopping-action-sub.sa-delivery, .shopping-action-btn.sa-delivery { border-width: 1.5px; border-color: #F2B29C; background: linear-gradient(90deg, #FFEDE6 0%, #E6F7EC 100%); color: #4A2A1F; }
+.shopping-action-sub.sa-delivery:hover, .shopping-action-btn.sa-delivery:hover { border-color: #EE4D2D; background: linear-gradient(90deg, #FFE0D3 0%, #D5F1DF 100%); }
+.shopping-action-btn.sa-delivery .shopping-action-icon { background: rgba(238, 77, 45, .14); }
+.shopping-action-sub.sa-shopee { border-width: 1.5px; border-color: #EE4D2D; background: #FFF1EC; color: #B93413; }
+.shopping-action-sub.sa-shopee:hover { border-color: #EE4D2D; background: #FFE0D3; }
+.shopping-action-sub.sa-grab { border-width: 1.5px; border-color: #00B14F; background: #E6F7EC; color: #007A38; }
+.shopping-action-sub.sa-grab:hover { border-color: #00B14F; background: #D0F0DC; }
+.shopping-action-sub.sa-zalo, .shopping-action-btn.sa-zalo { border-width: 1.5px; border-color: #0068FF; background: #E8F1FF; color: #0050CC; }
+.shopping-action-sub.sa-zalo:hover, .shopping-action-btn.sa-zalo:hover { border-color: #0068FF; background: #D3E4FF; }
+.shopping-action-btn.sa-zalo .shopping-action-icon { background: rgba(0, 104, 255, .14); }
+.shopping-action-sub.sa-checklist, .shopping-action-btn.sa-checklist { border-width: 1.5px; border-color: #F2B705; background: #FFF6DC; color: #7A5200; }
+.shopping-action-sub.sa-checklist:hover, .shopping-action-btn.sa-checklist:hover { border-color: #F2B705; background: #FFEDB8; }
+.shopping-action-btn.sa-checklist .shopping-action-icon { background: rgba(242, 183, 5, .22); }
 .shopping-checklist-card { width: 640px; padding: 28px 32px; background: #fff; color: #1F2937; font-family: inherit; }
 .shopping-checklist-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; padding-bottom: 14px; border-bottom: 2px solid #1F2937; font-size: 20px; font-weight: 800; }
 .shopping-checklist-section { margin-bottom: 16px; }

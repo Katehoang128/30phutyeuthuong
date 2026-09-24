@@ -1465,14 +1465,14 @@ function BhxDailyCartCard({ dishes, units, mealLabel, selectedDay }: { dishes: {
     <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-row sm:flex-wrap">
       <a href={BACH_HOA_XANH_AFFILIATE_URL} target="_blank" rel="nofollow sponsored noopener" onClick={() => trackEvent('bhx_daily_cart_opened', { day: selectedDay, meal: mealLabel, total: cartTotal })} className="bhx-cta tactile col-span-2 flex items-center justify-center gap-2 py-3.5 text-center text-sm no-underline sm:flex-1 sm:basis-[230px] sm:py-3" data-testid="button-bhx-daily-cart"><ShoppingBasket size={17} /> 🛒 Đặt Bách Hóa Xanh 1-Chạm</a>
       <div className="relative sm:flex-1 sm:basis-[150px]">
-        <button type="button" onClick={() => setDeliveryOpen((open) => !open)} className="shopping-action-sub tactile flex w-full items-center justify-center gap-1.5" aria-expanded={deliveryOpen} data-testid="button-daily-order-delivery">🛵 ShopeeFood/GrabMart<ChevronDown size={13} className={`shrink-0 transition-transform ${deliveryOpen ? 'rotate-180' : ''}`} /></button>
+        <button type="button" onClick={() => setDeliveryOpen((open) => !open)} className="shopping-action-sub sa-delivery tactile flex w-full items-center justify-center gap-1.5" aria-expanded={deliveryOpen} data-testid="button-daily-order-delivery">🛵 ShopeeFood/GrabMart<ChevronDown size={13} className={`shrink-0 transition-transform ${deliveryOpen ? 'rotate-180' : ''}`} /></button>
         {deliveryOpen && <div className="absolute inset-x-0 top-full z-10 mt-1.5 grid grid-cols-2 gap-1.5 rounded-xl border bg-white p-1.5 shadow-lg" data-testid="panel-daily-delivery-options">
-          <button type="button" onClick={() => sendToDeliveryApp('shopeefood')} className="shopping-action-sub tactile" data-testid="button-daily-send-shopeefood">{sentApp === 'shopeefood' ? <Check size={13} /> : '🛵'} {sentApp === 'shopeefood' ? 'Đã copy!' : 'Shopee'}</button>
-          <button type="button" onClick={() => sendToDeliveryApp('grabmart')} className="shopping-action-sub tactile" data-testid="button-daily-send-grabmart">{sentApp === 'grabmart' ? <Check size={13} /> : '🟩'} {sentApp === 'grabmart' ? 'Đã copy!' : 'Grab'}</button>
+          <button type="button" onClick={() => sendToDeliveryApp('shopeefood')} className="shopping-action-sub sa-shopee tactile" data-testid="button-daily-send-shopeefood">{sentApp === 'shopeefood' ? <Check size={13} /> : '🛵'} {sentApp === 'shopeefood' ? 'Đã copy!' : 'Shopee'}</button>
+          <button type="button" onClick={() => sendToDeliveryApp('grabmart')} className="shopping-action-sub sa-grab tactile" data-testid="button-daily-send-grabmart">{sentApp === 'grabmart' ? <Check size={13} /> : '🟩'} {sentApp === 'grabmart' ? 'Đã copy!' : 'Grab'}</button>
         </div>}
       </div>
-      <button type="button" onClick={shareDailyList} className="shopping-action-sub tactile text-center leading-tight sm:flex-1 sm:basis-[150px]" data-testid="button-bhx-daily-share-footer">{copied ? <Check size={13} /> : '📋'} {copied ? 'Đã copy!' : 'Gửi Zalo Cho Chồng / Tự Đi Chợ'}</button>
-      <button type="button" onClick={exportChecklistImage} disabled={exporting} className="shopping-action-sub tactile col-span-2 disabled:opacity-60 sm:flex-1 sm:basis-[230px]" data-testid="button-daily-export-checklist">{exporting ? <LoaderCircle size={13} className="animate-spin" /> : '🖨️'} {exporting ? 'Đang tạo ảnh...' : 'Xuất Checklist Dán Tủ Lạnh'}</button>
+      <button type="button" onClick={shareDailyList} className="shopping-action-sub sa-zalo tactile text-center leading-tight sm:flex-1 sm:basis-[150px]" data-testid="button-bhx-daily-share-footer">{copied ? <Check size={13} /> : '📋'} {copied ? 'Đã copy!' : 'Gửi Zalo Cho Chồng / Tự Đi Chợ'}</button>
+      <button type="button" onClick={exportChecklistImage} disabled={exporting} className="shopping-action-sub sa-checklist tactile col-span-2 disabled:opacity-60 sm:flex-1 sm:basis-[230px]" data-testid="button-daily-export-checklist">{exporting ? <LoaderCircle size={13} className="animate-spin" /> : '🖨️'} {exporting ? 'Đang tạo ảnh...' : 'Xuất Checklist Dán Tủ Lạnh'}</button>
     </div>
     {exportError && <p className="mt-1.5 text-[11px] font-semibold text-red-600">{exportError}</p>}
   </section>;
@@ -2225,22 +2225,22 @@ function ShoppingActionOptions({ freshItems, dryItems, customItems, totalCost, c
         <ExternalLink size={15} className="shrink-0" />
       </a>
       <div>
-        <button type="button" onClick={() => setDeliveryOpen((open) => !open)} className="shopping-action-btn tactile" aria-expanded={deliveryOpen} data-testid="button-order-delivery">
+        <button type="button" onClick={() => setDeliveryOpen((open) => !open)} className="shopping-action-btn sa-delivery tactile" aria-expanded={deliveryOpen} data-testid="button-order-delivery">
           <span className="shopping-action-icon">🛵</span>
           <span className="min-w-0 flex-1 text-left"><span className="block text-sm font-bold">Đặt Qua ShopeeFood / GrabMart</span><span className="block text-[11px] text-muted-foreground">Copy danh sách rồi dán vào ghi chú đơn hàng</span></span>
           <ChevronDown size={15} className={`shrink-0 transition-transform ${deliveryOpen ? 'rotate-180' : ''}`} />
         </button>
         {deliveryOpen && <div className="mt-2 grid grid-cols-2 gap-2 pl-1" data-testid="panel-delivery-options">
-          <button type="button" onClick={() => sendToDeliveryApp('shopeefood')} className="shopping-action-sub tactile" data-testid="button-send-shopeefood">{sentApp === 'shopeefood' ? <Check size={14} /> : '🛵'} {sentApp === 'shopeefood' ? 'Đã copy!' : 'ShopeeFood'}</button>
-          <button type="button" onClick={() => sendToDeliveryApp('grabmart')} className="shopping-action-sub tactile" data-testid="button-send-grabmart">{sentApp === 'grabmart' ? <Check size={14} /> : '🟩'} {sentApp === 'grabmart' ? 'Đã copy!' : 'GrabMart'}</button>
+          <button type="button" onClick={() => sendToDeliveryApp('shopeefood')} className="shopping-action-sub sa-shopee tactile" data-testid="button-send-shopeefood">{sentApp === 'shopeefood' ? <Check size={14} /> : '🛵'} {sentApp === 'shopeefood' ? 'Đã copy!' : 'ShopeeFood'}</button>
+          <button type="button" onClick={() => sendToDeliveryApp('grabmart')} className="shopping-action-sub sa-grab tactile" data-testid="button-send-grabmart">{sentApp === 'grabmart' ? <Check size={14} /> : '🟩'} {sentApp === 'grabmart' ? 'Đã copy!' : 'GrabMart'}</button>
         </div>}
       </div>
-      <button type="button" onClick={onCopyList} className="shopping-action-btn tactile" data-testid="button-export-zalo-list">
+      <button type="button" onClick={onCopyList} className="shopping-action-btn sa-zalo tactile" data-testid="button-export-zalo-list">
         <span className="shopping-action-icon">📋</span>
         <span className="min-w-0 flex-1 text-left"><span className="block text-sm font-bold">{copied ? 'Đã copy danh sách!' : 'Xuất Danh Sách Zalo'}</span><span className="block text-[11px] text-muted-foreground">Để tự đi chợ hoặc nhờ chồng đi giúp</span></span>
         {copied ? <Check size={15} className="shrink-0" /> : <Copy size={15} className="shrink-0" />}
       </button>
-      <button type="button" onClick={exportChecklistImage} disabled={exporting} className="shopping-action-btn tactile disabled:opacity-60" data-testid="button-export-checklist-image">
+      <button type="button" onClick={exportChecklistImage} disabled={exporting} className="shopping-action-btn sa-checklist tactile disabled:opacity-60" data-testid="button-export-checklist-image">
         <span className="shopping-action-icon">🖨️</span>
         <span className="min-w-0 flex-1 text-left"><span className="block text-sm font-bold">{exporting ? 'Đang tạo ảnh...' : 'Tải Checklist Dán Tủ Lạnh'}</span><span className="block text-[11px] text-muted-foreground">Ảnh PNG in ra dán tủ lạnh cho cả nhà</span></span>
         {exporting ? <LoaderCircle size={15} className="shrink-0 animate-spin" /> : <Download size={15} className="shrink-0" />}
