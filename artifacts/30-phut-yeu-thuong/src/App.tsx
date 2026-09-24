@@ -1287,8 +1287,8 @@ function SettingsModal({ prefs, setOpen, updatePrefs, saveSettings }: { prefs: P
   };
   const toggleAllergy = (value: string) => updatePrefs({ allergies: prefs.allergies.includes(value) ? prefs.allergies.filter((item) => item !== value) : [...prefs.allergies, value] });
   const toggleHealing = (mode: HealingMode) => updatePrefs({ healingModes: prefs.healingModes.includes(mode) ? prefs.healingModes.filter((item) => item !== mode) : [...prefs.healingModes, mode] });
-  return <div className="settings-modal fixed inset-0 z-[70] flex items-end justify-center bg-foreground/45 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" onMouseDown={(event) => event.target === event.currentTarget && setOpen(false)}>
-    <div className="settings-modal-panel flex max-h-[80vh] w-full max-w-xl flex-col overflow-hidden rounded-t-[24px] bg-card shadow-2xl sm:rounded-[24px]">
+  return <div className="settings-modal fixed inset-0 z-[10000] flex items-end justify-center bg-foreground/45 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" onMouseDown={(event) => event.target === event.currentTarget && setOpen(false)}>
+    <div className="settings-modal-panel flex max-h-[85dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-[24px] bg-card shadow-2xl sm:rounded-[24px]">
       <div className="flex items-start justify-between gap-3 border-b px-4 py-4"><div><p className="text-[10px] font-bold uppercase tracking-[.16em] text-primary">Nhà mình</p><h2 id="settings-modal-title" className="display-font text-2xl font-bold">Thiết lập nhà mình</h2></div><button type="button" onClick={() => setOpen(false)} className="rounded-full p-2 text-muted-foreground hover:bg-muted" aria-label="Đóng thiết lập"><X size={19} /></button></div>
       <div className="flex gap-1 overflow-x-auto border-b bg-muted/40 p-2" role="tablist" aria-label="Nhóm thiết lập"><button type="button" onClick={() => setTab('members')} className={`settings-tab ${tab === 'members' ? 'settings-tab-active' : ''}`} role="tab" aria-selected={tab === 'members'}>👨‍👩‍👧‍👦 Thành viên & Ngân sách</button><button type="button" onClick={() => setTab('taste')} className={`settings-tab ${tab === 'taste' ? 'settings-tab-active' : ''}`} role="tab" aria-selected={tab === 'taste'}>🥗 Khẩu vị & Dị ứng</button><button type="button" onClick={() => setTab('healing')} className={`settings-tab ${tab === 'healing' ? 'settings-tab-active' : ''}`} role="tab" aria-selected={tab === 'healing'}>🌿 Bếp Chữa Lành</button></div>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -1776,7 +1776,7 @@ function ProUpgradeModal({ open, onClose, onUnlocked, globalPhone, setGlobalPhon
     }
   };
 
-  return <div className="pro-sales-backdrop fixed inset-0 z-[2000] flex items-end justify-center bg-foreground/55 p-0 backdrop-blur-sm sm:p-4" role="dialog" aria-modal="true" aria-labelledby="pro-upgrade-title">
+  return <div className="pro-sales-backdrop fixed inset-0 z-[10000] flex items-end justify-center bg-foreground/55 p-0 backdrop-blur-sm sm:p-4" role="dialog" aria-modal="true" aria-labelledby="pro-upgrade-title">
     <div className="pro-sales-sheet max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-[24px] bg-card p-5 shadow-2xl sm:rounded-[24px] md:p-7">
       <div className="flex items-start justify-between gap-4"><div><h2 id="pro-upgrade-title" className="display-font text-2xl font-bold text-primary">👑 NÂNG CẤP BẾP VIP PRO</h2><p className="mt-2 text-sm italic leading-6 text-muted-foreground">Mỗi ngày 1.600đ — Mua lại 10 giờ tự do & Tiết kiệm hàng triệu tiền chợ!</p></div><button onClick={onClose} className="rounded-full p-2 text-muted-foreground hover:bg-muted" aria-label="Đóng popup nâng cấp" data-testid="button-close-upgrade"><X size={19} /></button></div>
       <div className="mt-4 grid gap-2 text-sm"><span>✅ Thực đơn đủ 7 ngày, đủ chất</span><span>✅ Hỏi AI không giới hạn</span><span>✅ Công thức và danh sách đi chợ thông minh</span><span>✅ Hỗ trợ gia đình nhiều thành viên</span></div>
@@ -1970,8 +1970,8 @@ function DishPickerModal({ slot, pool, prefs, favorites, currentName, onSelect, 
     { value: 'han-nhat', label: '🍱 Hàn - Nhật' },
     { value: 'au-my', label: '🍝 Âu - Mỹ' },
   ];
-  return <div className="settings-modal fixed inset-0 z-[75] flex items-end justify-center bg-foreground/45 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="dish-picker-title" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-    <div className="settings-modal-panel flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-t-[24px] bg-card shadow-2xl sm:rounded-[24px]">
+  return <div className="settings-modal fixed inset-0 z-[10000] flex items-end justify-center bg-foreground/45 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="dish-picker-title" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <div className="settings-modal-panel flex max-h-[85dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-[24px] bg-card shadow-2xl sm:rounded-[24px]">
       <div className="flex items-start justify-between gap-3 border-b px-4 py-4"><div><p className="text-[10px] font-bold uppercase tracking-[.16em] text-primary">Chọn món</p><h2 id="dish-picker-title" className="display-font text-xl font-bold">{slotLabel}</h2></div><button type="button" onClick={onClose} className="rounded-full p-2 text-muted-foreground hover:bg-muted" aria-label="Đóng chọn món"><X size={19} /></button></div>
       <div className="border-b p-3">
         <div className="relative"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm món, nguyên liệu..." className="w-full rounded-xl border bg-background py-2.5 pl-9 pr-3 text-sm outline-none ring-primary focus:ring-2" data-testid="input-dish-picker-search" /></div>
