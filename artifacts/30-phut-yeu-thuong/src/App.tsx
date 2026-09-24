@@ -1358,9 +1358,9 @@ function ZeroScrollMealPlanner({ plan, prefs, favorites, setFavorites, onSwap, o
   const planIndex = plan.findIndex((day) => day.day === selectedDay);
   const day = planIndex >= 0 ? plan[planIndex] : null;
   const mealOptions = [
+    { key: 'breakfast' as const, label: 'Bữa Sáng', icon: '🌅' },
     { key: 'lunch' as const, label: 'Bữa Trưa', icon: '☀️' },
     { key: 'dinner' as const, label: 'Bữa Tối', icon: '🌙' },
-    { key: 'breakfast' as const, label: 'Bữa Sáng', icon: '🌅' },
   ];
   const dishes = day && selectedMeal === 'breakfast'
     ? [{ dish: day.breakfast, slot: 'breakfast' as DishSlot }]
