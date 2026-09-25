@@ -1,6 +1,7 @@
 """Zalo Bot webhook that answers customers as the virtual kitchen assistant of 30 Phút Yêu Thương, powered by Gemini."""
 
 import asyncio
+import hashlib
 import hmac
 import json
 import logging
@@ -17,6 +18,8 @@ load_dotenv()
 
 logger = logging.getLogger("zalo-bot")
 logging.basicConfig(level=logging.INFO)
+# httpx logs every request URL at INFO, and the Zalo bot token is part of that URL.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 # Same model family the web app's api-server already uses. gemini-1.5-* has been retired by Google.
@@ -81,13 +84,19 @@ def _bot_url(method: str) -> str:
     return f"{ZALO_BOT_API_BASE}/bot{ZALO_BOT_TOKEN}/{method}"
 
 
+def _secret_token() -> str:
+    # Zalo only accepts 8-256 chars of A-Z a-z 0-9 _ - for secret_token, but ZALO_WEBHOOK_SECRET can be
+    # any string (Render's generated values contain + / =), so register and check its SHA-256 hex digest.
+    return hashlib.sha256(ZALO_WEBHOOK_SECRET.encode("utf-8")).hexdigest()
+
+
 async def _register_webhook() -> None:
     """Point Zalo at this service so nobody has to call setWebhook by hand."""
     if not (ZALO_BOT_TOKEN and ZALO_WEBHOOK_SECRET and PUBLIC_URL):
         logger.warning("Webhook not registered: set ZALO_BOT_TOKEN, ZALO_WEBHOOK_SECRET and PUBLIC_URL/RENDER_EXTERNAL_URL.")
         return
     try:
-        response = await _http().post(_bot_url("setWebhook"), json={"url": f"{PUBLIC_URL}/zalo-webhook", "secret_token": ZALO_WEBHOOK_SECRET})
+        response = await _http().post(_bot_url("setWebhook"), json={"url": f"{PUBLIC_URL}/zalo-webhook", "secret_token": _secret_token()})
         logger.info("setWebhook -> %s %s", response.status_code, response.text[:200])
     except httpx.HTTPError:
         logger.exception("setWebhook failed")
@@ -202,7 +211,7 @@ async def zalo_webhook(request: Request, background_tasks: BackgroundTasks):
     if not ZALO_WEBHOOK_SECRET:
         raise HTTPException(status_code=503, detail="Webhook secret is not configured")
     received = request.headers.get("X-Bot-Api-Secret-Token", "")
-    if not hmac.compare_digest(received, ZALO_WEBHOOK_SECRET):
+    if not hmac.compare_digest(received, _secret_token()):
         raise HTTPException(status_code=401, detail="Invalid secret token")
 
     try:
