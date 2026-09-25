@@ -190,8 +190,10 @@ async def send_zalo_image(chat_id: str, image_url: str, caption: str = "") -> No
 _IMAGE_TAG = re.compile(r"\[\[IMAGE:\s*(https?://\S+?)\s*\]\]")
 
 
-async def _reply_to_user(chat_id: str, user_text: str) -> None:
-    history = _histories.get(chat_id, [])
+async def _reply_to_user(chat_id: str, user_id: str, user_text: str) -> None:
+    # In a group chat.id is the group, so key memory per member or everyone's questions would mix together.
+    memory_key = f"{chat_id}:{user_id}"
+    history = _histories.get(memory_key, [])
     reply = await generate_ai_response(user_text, history)
 
     images = _IMAGE_TAG.findall(reply)
@@ -199,7 +201,7 @@ async def _reply_to_user(chat_id: str, user_text: str) -> None:
 
     if reply != FALLBACK_REPLY:
         history = history + [{"role": "user", "text": user_text}, {"role": "model", "text": clean_reply}]
-        _histories[chat_id] = history[-MAX_HISTORY_MESSAGES:]
+        _histories[memory_key] = history[-MAX_HISTORY_MESSAGES:]
 
     await send_zalo_text(chat_id, clean_reply)
     for url in images:
@@ -228,6 +230,7 @@ async def zalo_webhook(request: Request, background_tasks: BackgroundTasks):
     if (message.get("from") or {}).get("is_bot"):
         return {"ok": True}
     chat_id = str((message.get("chat") or {}).get("id", ""))
+    user_id = str((message.get("from") or {}).get("id", "")) or chat_id
     text = str(message.get("text") or "").strip()
     message_id = str(message.get("message_id", ""))
     if not chat_id or not text:
@@ -238,7 +241,7 @@ async def zalo_webhook(request: Request, background_tasks: BackgroundTasks):
         _seen_message_ids.append(message_id)
 
     # Zalo expects a fast 200, so the Gemini call and the reply happen after we respond.
-    background_tasks.add_task(_reply_to_user, chat_id, text)
+    background_tasks.add_task(_reply_to_user, chat_id, user_id, text)
     return {"ok": True}
 
 
