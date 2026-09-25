@@ -16,9 +16,7 @@ services:
         value: gemini-3.6-flash
       - key: GEMINI_API_KEY
         sync: false
-      - key: ZALO_ACCESS_TOKEN
+      - key: ZALO_BOT_TOKEN
         sync: false
-      - key: ZALO_APP_ID
-        sync: false
-      - key: ZALO_OA_SECRET_KEY
-        sync: false
+      - key: ZALO_WEBHOOK_SECRET
+        generateValue: true

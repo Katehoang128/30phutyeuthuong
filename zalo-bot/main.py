@@ -1,6 +1,6 @@
-"""Zalo OA webhook that answers customers as the "Trợ Lý Bếp AI" of 30 Phút Yêu Thương, powered by Gemini."""
+"""Zalo Bot webhook that answers customers as the virtual kitchen assistant of 30 Phút Yêu Thương, powered by Gemini."""
 
-import hashlib
+import asyncio
 import hmac
 import json
 import logging
@@ -21,17 +21,20 @@ logging.basicConfig(level=logging.INFO)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 # Same model family the web app's api-server already uses. gemini-1.5-* has been retired by Google.
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
-ZALO_ACCESS_TOKEN = os.getenv("ZALO_ACCESS_TOKEN", "")
-# Optional: when both are set, incoming webhooks must carry a valid X-ZEvent-Signature.
-ZALO_APP_ID = os.getenv("ZALO_APP_ID", "")
-ZALO_OA_SECRET_KEY = os.getenv("ZALO_OA_SECRET_KEY", "")
+# Token that Zalo Bot Manager sends to your Zalo account when you create the bot.
+ZALO_BOT_TOKEN = os.getenv("ZALO_BOT_TOKEN", "")
+# 8-256 chars of your choosing; Zalo echoes it back in the X-Bot-Api-Secret-Token header on every webhook call.
+ZALO_WEBHOOK_SECRET = os.getenv("ZALO_WEBHOOK_SECRET", "")
+ZALO_BOT_API_BASE = os.getenv("ZALO_BOT_API_BASE", "https://bot-api.zapps.me").rstrip("/")
+# Render exposes the service URL as RENDER_EXTERNAL_URL; PUBLIC_URL overrides it (e.g. for a tunnel).
+PUBLIC_URL = (os.getenv("PUBLIC_URL") or os.getenv("RENDER_EXTERNAL_URL") or "").rstrip("/")
 
 # The assistant's name shown to customers; change it in .env, no code edit needed.
 BOT_NAME = os.getenv("BOT_NAME", "Mai")
 WEB_APP_URL = "https://three0phut-web.onrender.com"
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
-ZALO_SEND_URL = "https://openapi.zalo.me/v3.0/oa/message/cs"
-ZALO_TEXT_LIMIT = 1900  # Zalo caps a text message at 2000 characters.
+ZALO_TEXT_LIMIT = 1900  # Stay under Zalo's 2000-character text limit.
+GEMINI_MAX_ATTEMPTS = 3
 MAX_HISTORY_MESSAGES = 12  # 6 user/assistant turns kept per Zalo user.
 FALLBACK_REPLY = "Em đang hơi bận một chút, chị nhắn lại sau ít phút giúp em nhé 💚"
 
@@ -69,15 +72,32 @@ NGUYÊN TẮC
 """
 
 _client: httpx.AsyncClient | None = None
-# Conversation memory per Zalo user id. In-memory only: it resets when the service restarts or sleeps.
+# Conversation memory per Zalo chat id. In-memory only: it resets when the service restarts or sleeps.
 _histories: dict[str, list[dict]] = {}
 _seen_message_ids: deque[str] = deque(maxlen=500)
+
+
+def _bot_url(method: str) -> str:
+    return f"{ZALO_BOT_API_BASE}/bot{ZALO_BOT_TOKEN}/{method}"
+
+
+async def _register_webhook() -> None:
+    """Point Zalo at this service so nobody has to call setWebhook by hand."""
+    if not (ZALO_BOT_TOKEN and ZALO_WEBHOOK_SECRET and PUBLIC_URL):
+        logger.warning("Webhook not registered: set ZALO_BOT_TOKEN, ZALO_WEBHOOK_SECRET and PUBLIC_URL/RENDER_EXTERNAL_URL.")
+        return
+    try:
+        response = await _http().post(_bot_url("setWebhook"), json={"url": f"{PUBLIC_URL}/zalo-webhook", "secret_token": ZALO_WEBHOOK_SECRET})
+        logger.info("setWebhook -> %s %s", response.status_code, response.text[:200])
+    except httpx.HTTPError:
+        logger.exception("setWebhook failed")
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global _client
     _client = httpx.AsyncClient(timeout=httpx.Timeout(25.0))
+    await _register_webhook()
     yield
     await _client.aclose()
 
@@ -98,17 +118,30 @@ async def generate_ai_response(user_message: str, history: list[dict] | None = N
     payload = {
         "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
         "contents": contents,
-        "generationConfig": {"temperature": 0.7, "maxOutputTokens": 700},
+        # Generous cap: on thinking models the reasoning tokens count against it, and a small value
+        # truncates the visible answer mid-sentence. Reply length is steered by the system prompt instead.
+        "generationConfig": {"temperature": 0.7, "maxOutputTokens": 4096},
     }
-    try:
-        response = await _http().post(GEMINI_URL, headers={"x-goog-api-key": GEMINI_API_KEY}, json=payload)
-        response.raise_for_status()
-        parts = response.json()["candidates"][0]["content"]["parts"]
-        text = "".join(part.get("text", "") for part in parts).strip()
-        return text or FALLBACK_REPLY
-    except (httpx.HTTPError, KeyError, IndexError, ValueError):
-        logger.exception("Gemini request failed")
-        return FALLBACK_REPLY
+    for attempt in range(GEMINI_MAX_ATTEMPTS):
+        try:
+            response = await _http().post(GEMINI_URL, headers={"x-goog-api-key": GEMINI_API_KEY}, json=payload)
+            if response.status_code in (429, 500, 502, 503, 504) and attempt < GEMINI_MAX_ATTEMPTS - 1:
+                await asyncio.sleep(1.5 * (attempt + 1))  # Gemini overload is usually momentary
+                continue
+            response.raise_for_status()
+            candidate = response.json()["candidates"][0]
+            if candidate.get("finishReason") == "MAX_TOKENS":
+                logger.warning("Gemini reply hit the token cap and may be truncated")
+            text = "".join(part.get("text", "") for part in candidate["content"]["parts"]).strip()
+            return text or FALLBACK_REPLY
+        except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
+            logger.exception("Gemini request failed")
+            # An HTTP error status here is final (bad key, bad request, retries already used up);
+            # only network hiccups are worth another attempt.
+            if isinstance(exc, httpx.HTTPStatusError) or attempt == GEMINI_MAX_ATTEMPTS - 1:
+                break
+            await asyncio.sleep(1.5 * (attempt + 1))
+    return FALLBACK_REPLY
 
 
 def _split_text(text: str, limit: int = ZALO_TEXT_LIMIT) -> list[str]:
@@ -126,40 +159,30 @@ def _split_text(text: str, limit: int = ZALO_TEXT_LIMIT) -> list[str]:
     return chunks
 
 
-async def _zalo_send(user_id: str, message: dict) -> None:
-    response = await _http().post(
-        ZALO_SEND_URL,
-        headers={"access_token": ZALO_ACCESS_TOKEN, "Content-Type": "application/json"},
-        json={"recipient": {"user_id": user_id}, "message": message},
-    )
-    body = response.json() if response.content else {}
-    # Zalo answers HTTP 200 even on failure; the real status is body["error"] (0 = success).
-    if response.status_code != 200 or body.get("error", 0) != 0:
-        logger.error("Zalo send failed: %s %s", response.status_code, body)
+async def _zalo_call(method: str, payload: dict) -> None:
+    try:
+        response = await _http().post(_bot_url(method), json=payload)
+        body = response.json() if response.content else {}
+        if response.status_code != 200 or body.get("ok") is False:
+            logger.error("Zalo %s failed: %s %s", method, response.status_code, body)
+    except (httpx.HTTPError, ValueError):
+        logger.exception("Zalo %s request failed", method)
 
 
-async def send_zalo_text(user_id: str, text: str) -> None:
+async def send_zalo_text(chat_id: str, text: str) -> None:
     for chunk in _split_text(text):
-        await _zalo_send(user_id, {"text": chunk})
+        await _zalo_call("sendMessage", {"chat_id": chat_id, "text": chunk})
 
 
-async def send_zalo_image(user_id: str, image_url: str, caption: str = "") -> None:
-    message: dict = {
-        "attachment": {
-            "type": "template",
-            "payload": {"template_type": "media", "elements": [{"media_type": "image", "url": image_url}]},
-        }
-    }
-    if caption:
-        message["text"] = caption[:ZALO_TEXT_LIMIT]
-    await _zalo_send(user_id, message)
+async def send_zalo_image(chat_id: str, image_url: str, caption: str = "") -> None:
+    await _zalo_call("sendPhoto", {"chat_id": chat_id, "photo": image_url, "caption": caption[:ZALO_TEXT_LIMIT]})
 
 
 _IMAGE_TAG = re.compile(r"\[\[IMAGE:\s*(https?://\S+?)\s*\]\]")
 
 
-async def _reply_to_user(user_id: str, user_text: str) -> None:
-    history = _histories.get(user_id, [])
+async def _reply_to_user(chat_id: str, user_text: str) -> None:
+    history = _histories.get(chat_id, [])
     reply = await generate_ai_response(user_text, history)
 
     images = _IMAGE_TAG.findall(reply)
@@ -167,49 +190,46 @@ async def _reply_to_user(user_id: str, user_text: str) -> None:
 
     if reply != FALLBACK_REPLY:
         history = history + [{"role": "user", "text": user_text}, {"role": "model", "text": clean_reply}]
-        _histories[user_id] = history[-MAX_HISTORY_MESSAGES:]
+        _histories[chat_id] = history[-MAX_HISTORY_MESSAGES:]
 
-    await send_zalo_text(user_id, clean_reply)
+    await send_zalo_text(chat_id, clean_reply)
     for url in images:
-        await send_zalo_image(user_id, url)
-
-
-def _signature_ok(raw_body: bytes, timestamp: str, header: str | None) -> bool:
-    if not (ZALO_APP_ID and ZALO_OA_SECRET_KEY):
-        return True  # verification not configured
-    if not header:
-        return False
-    expected = hashlib.sha256(f"{ZALO_APP_ID}{raw_body.decode('utf-8')}{timestamp}{ZALO_OA_SECRET_KEY}".encode()).hexdigest()
-    return hmac.compare_digest(header.removeprefix("mac=").strip().lower(), expected)
+        await send_zalo_image(chat_id, url)
 
 
 @app.post("/zalo-webhook")
 async def zalo_webhook(request: Request, background_tasks: BackgroundTasks):
-    raw_body = await request.body()
+    if not ZALO_WEBHOOK_SECRET:
+        raise HTTPException(status_code=503, detail="Webhook secret is not configured")
+    received = request.headers.get("X-Bot-Api-Secret-Token", "")
+    if not hmac.compare_digest(received, ZALO_WEBHOOK_SECRET):
+        raise HTTPException(status_code=401, detail="Invalid secret token")
+
     try:
-        event = json.loads(raw_body)
+        body = json.loads(await request.body())
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    if not _signature_ok(raw_body, str(event.get("timestamp", "")), request.headers.get("X-ZEvent-Signature")):
-        raise HTTPException(status_code=401, detail="Invalid signature")
+    # Zalo may deliver the update bare or wrapped as {"ok": true, "result": {...}}.
+    update = body.get("result", body) if isinstance(body, dict) else {}
+    if update.get("event_name") != "message.text.received":
+        return {"ok": True}  # images, stickers and other events are acknowledged and ignored
 
-    if event.get("event_name") != "user_send_text":
-        return {"ok": True}  # follow/unfollow/image/... events are acknowledged and ignored
-
-    user_id = str(event.get("sender", {}).get("id", ""))
-    message = event.get("message", {})
-    text = str(message.get("text", "")).strip()
-    msg_id = str(message.get("msg_id", ""))
-    if not user_id or not text:
+    message = update.get("message") or {}
+    if (message.get("from") or {}).get("is_bot"):
         return {"ok": True}
-    if msg_id:
-        if msg_id in _seen_message_ids:
+    chat_id = str((message.get("chat") or {}).get("id", ""))
+    text = str(message.get("text") or "").strip()
+    message_id = str(message.get("message_id", ""))
+    if not chat_id or not text:
+        return {"ok": True}
+    if message_id:
+        if message_id in _seen_message_ids:
             return {"ok": True}  # Zalo retries deliveries it thinks failed
-        _seen_message_ids.append(msg_id)
+        _seen_message_ids.append(message_id)
 
     # Zalo expects a fast 200, so the Gemini call and the reply happen after we respond.
-    background_tasks.add_task(_reply_to_user, user_id, text)
+    background_tasks.add_task(_reply_to_user, chat_id, text)
     return {"ok": True}
 
 
