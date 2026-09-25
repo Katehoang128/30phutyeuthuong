@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: zalo-bot-30phut
+    runtime: python
+    rootDir: zalo-bot
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: BOT_NAME
+        value: Mai
+      - key: GEMINI_MODEL
+        value: gemini-3.6-flash
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ZALO_ACCESS_TOKEN
+        sync: false
+      - key: ZALO_APP_ID
+        sync: false
+      - key: ZALO_OA_SECRET_KEY
+        sync: false
