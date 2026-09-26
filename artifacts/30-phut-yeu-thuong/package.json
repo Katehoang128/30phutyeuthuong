@@ -82,7 +82,7 @@
     "@tiptap/pm": "3.31.3",
     "@tiptap/react": "3.31.3",
     "@tiptap/starter-kit": "3.31.3",
-    "html2canvas": "^1.4.1",
+    "html2canvas-pro": "^2.4.5",
     "qrcode": "^1.5.4"
   }
 }

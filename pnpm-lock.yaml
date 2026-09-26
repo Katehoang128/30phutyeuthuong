@@ -186,9 +186,9 @@ importers:
       '@tiptap/starter-kit':
         specifier: 3.31.3
         version: 3.31.3
-      html2canvas:
-        specifier: ^1.4.1
-        version: 1.4.1
+      html2canvas-pro:
+        specifier: ^2.4.5
+        version: 2.4.5
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
@@ -2509,9 +2509,9 @@ packages:
   help-me@5.0.0:
     resolution: {integrity: sha512-7xgomUX6ADmcYzFik0HzAxh/73YlKR9bmFzf51CZwR+b6YtzU2m0u49hQCqV6SvlqIqsaxovfwdvbnsw3b/zpg==}
 
-  html2canvas@1.4.1:
-    resolution: {integrity: sha512-fPU6BHNpsyIhr8yyMpTLLxAbkaK8ArIBcmZIRiBLiDhjeqvXolaEmDGmELFuX9I4xDcaKKcJl+TKZLqruBbmWA==}
-    engines: {node: '>=8.0.0'}
+  html2canvas-pro@2.4.5:
+    resolution: {integrity: sha512-aeAwXx+Tt+i3ci0PJffMJVyxr0FJzuz44SkB7j/2Mh6Mjb7/+OeMhms56wK4j72zzKlKthoxSMzd883Lr0PcCA==}
+    engines: {node: '>=16.0.0'}
 
   http-errors@2.0.1:
     resolution: {integrity: sha512-4FbRdAX+bSdmo4AUFuS0WNiPz8NgFt+r8ThgNWmlrjQjt1Q7ZR9+zTlce2859x4KSXrwIsaeTqDoKQmtP8pLmQ==}
@@ -5416,7 +5416,7 @@ snapshots:
 
   help-me@5.0.0: {}
 
-  html2canvas@1.4.1:
+  html2canvas-pro@2.4.5:
     dependencies:
       css-line-break: 2.1.0
       text-segmentation: 1.0.3

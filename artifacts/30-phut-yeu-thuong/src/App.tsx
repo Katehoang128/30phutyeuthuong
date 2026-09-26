@@ -17,6 +17,78 @@ const RichTextEditor = lazy(() => import('./blog-editor'));
 const queryClient = new QueryClient();
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 function apiUrl(path: string) { return `${API_BASE_URL}${path}`; }
+// --- Saving exported images -------------------------------------------------------------------
+// In-app browsers (Zalo, Facebook, Instagram...) and iOS block <a download>, so on phones we hand the
+// image to the native share sheet, or fall back to a full-screen preview the user can long-press to save.
+type Html2CanvasFn = typeof import('html2canvas-pro').default;
+async function captureCanvas(html2canvas: Html2CanvasFn, node: HTMLElement, options: Parameters<Html2CanvasFn>[1]) {
+  try {
+    return await html2canvas(node, options);
+  } catch {
+    // Very tall nodes at scale 2 can exceed the canvas size limit of some phone browsers.
+    return await html2canvas(node, { ...options, scale: 1 });
+  }
+}
+const IN_APP_BROWSER_PATTERN = /Zalo|FBAN|FBAV|FB_IAB|Instagram|Messenger|Line\//i;
+function showImagePreview(dataUrl: string, inApp: boolean) {
+  const overlay = document.createElement('div');
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:20000;background:rgba(30,15,8,.92);display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px;overflow:auto;';
+  const close = () => overlay.remove();
+  const hint = document.createElement('p');
+  hint.style.cssText = 'color:#fff;font:600 14px/1.5 DM Sans,system-ui,sans-serif;text-align:center;margin:8px 0 0;max-width:420px;';
+  hint.textContent = 'Nhấn giữ vào ảnh, rồi chọn “Lưu ảnh” (iPhone) hoặc “Tải hình ảnh xuống” (Android).';
+  const image = document.createElement('img');
+  image.src = dataUrl;
+  image.alt = 'Ảnh vừa tạo';
+  image.style.cssText = 'max-width:100%;height:auto;border-radius:12px;background:#fff;-webkit-touch-callout:default;-webkit-user-select:auto;user-select:auto;';
+  overlay.append(hint, image);
+  if (inApp) {
+    const tip = document.createElement('p');
+    tip.style.cssText = 'color:#FFD9BF;font:500 12px/1.5 DM Sans,system-ui,sans-serif;text-align:center;margin:0;max-width:420px;';
+    tip.textContent = 'Mẹo: bấm nút ⋯ ở góc trên bên phải rồi chọn “Mở bằng trình duyệt” để tải ảnh dễ hơn.';
+    overlay.append(tip);
+  }
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = 'Đóng';
+  button.style.cssText = 'margin:4px 0 16px;padding:12px 28px;border:0;border-radius:999px;background:#E86A33;color:#fff;font:700 14px DM Sans,system-ui,sans-serif;';
+  button.addEventListener('click', close);
+  overlay.append(button);
+  document.body.appendChild(overlay);
+}
+async function deliverCanvas(canvas: HTMLCanvasElement, filename: string): Promise<void> {
+  const ua = navigator.userAgent;
+  const isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isMobile = isIOS || /Android/i.test(ua);
+  const inApp = IN_APP_BROWSER_PATTERN.test(ua);
+  const dataUrl = canvas.toDataURL('image/png');
+  if (isMobile && typeof navigator.share === 'function' && typeof navigator.canShare === 'function') {
+    try {
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (blob) {
+        const file = new File([blob], filename, { type: 'image/png' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file] });
+          return;
+        }
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return; // user closed the share sheet
+    }
+  }
+  if (inApp || isIOS) {
+    showImagePreview(dataUrl, inApp);
+    return;
+  }
+  const link = document.createElement('a');
+  link.href = dataUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
 type Budget = 'tietkiem' | 'vua' | 'thoaimai';
 type VegMode = '0' | '1' | '2';
 type HealingMode = 'stress' | 'hormone' | 'realfood';
@@ -1446,18 +1518,13 @@ function BhxDailyCartCard({ dishes, units, mealLabel, selectedDay }: { dishes: {
     setExportError('');
     trackEvent('daily_cart_checklist_export_started', { day: selectedDay, meal: mealLabel, items: ingredients.length });
     try {
-      const { default: html2canvas } = await import('html2canvas');
+      const { default: html2canvas } = await import('html2canvas-pro');
       if (document.fonts?.ready) await document.fonts.ready;
-      const canvas = await html2canvas(node, { scale: 2, backgroundColor: '#FFFFFF', useCORS: true, logging: false });
-      const dataUrl = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      link.href = dataUrl;
-      link.download = `checklist-${selectedDay}-${mealLabel}.png`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      const canvas = await captureCanvas(html2canvas, node, { scale: 2, backgroundColor: '#FFFFFF', useCORS: true, logging: false });
+      await deliverCanvas(canvas, `checklist-${selectedDay}-${mealLabel}.png`);
       trackEvent('daily_cart_checklist_exported', { day: selectedDay, meal: mealLabel, items: ingredients.length });
-    } catch {
+    } catch (error) {
+      console.error('Image export failed', error);
       setExportError('Chưa tạo được ảnh lúc này. Bạn thử lại nhé.');
       trackEvent('daily_cart_checklist_export_failed', {});
     } finally {
@@ -1581,12 +1648,12 @@ function WeeklyMenuExportCard({ plan, prefs, isPro, totalCost }: { plan: DayPlan
     setExportError('');
     trackEvent('menu_infographic_export_started', { days: plan.length });
     try {
-      const { default: html2canvas } = await import('html2canvas');
+      const { default: html2canvas } = await import('html2canvas-pro');
       if (document.fonts?.ready) await document.fonts.ready;
       // Pin the capture window to the node's own full (auto) size rather than the current
       // viewport — a `position: fixed` off-screen node used to get its height clamped to
       // window.innerHeight on short mobile screens, truncating the exported table mid-week.
-      const canvas = await html2canvas(node, {
+      const canvas = await captureCanvas(html2canvas, node, {
         scale: 2,
         backgroundColor: '#FAF9F5',
         useCORS: true,
@@ -1596,15 +1663,10 @@ function WeeklyMenuExportCard({ plan, prefs, isPro, totalCost }: { plan: DayPlan
         windowWidth: node.scrollWidth,
         windowHeight: node.scrollHeight,
       });
-      const dataUrl = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      link.href = dataUrl;
-      link.download = 'thuc-don-tuan-30-phut-yeu-thuong.png';
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      await deliverCanvas(canvas, 'thuc-don-tuan-30-phut-yeu-thuong.png');
       trackEvent('menu_infographic_exported', { days: plan.length });
-    } catch {
+    } catch (error) {
+      console.error('Image export failed', error);
       setExportError('Chưa tạo được ảnh lúc này. Bạn thử lại nhé.');
       trackEvent('menu_infographic_export_failed', {});
     } finally {
@@ -1905,19 +1967,14 @@ function RecipeCardExporter({ dish, units }: { dish: Dish; units: number }) {
     setExportError('');
     trackEvent('recipe_card_export_started', { dish: dish.name });
     try {
-      const { default: html2canvas } = await import('html2canvas');
+      const { default: html2canvas } = await import('html2canvas-pro');
       if (document.fonts?.ready) await document.fonts.ready;
-      const canvas = await html2canvas(node, { scale: 2, backgroundColor: '#FAF9F5', useCORS: true, logging: false });
-      const dataUrl = canvas.toDataURL('image/png');
+      const canvas = await captureCanvas(html2canvas, node, { scale: 2, backgroundColor: '#FAF9F5', useCORS: true, logging: false });
       const slug = normalize(dish.name).replace(/[^a-z0-9]+/gi, '-').replace(/(^-+|-+$)/g, '').toLowerCase() || 'mon-an';
-      const link = document.createElement('a');
-      link.href = dataUrl;
-      link.download = `cong-thuc-${slug}.png`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      await deliverCanvas(canvas, `cong-thuc-${slug}.png`);
       trackEvent('recipe_card_exported', { dish: dish.name });
-    } catch {
+    } catch (error) {
+      console.error('Image export failed', error);
       setExportError('Chưa tạo được thẻ công thức lúc này. Bạn thử lại nhé.');
       trackEvent('recipe_card_export_failed', { dish: dish.name });
     } finally {
@@ -2214,18 +2271,13 @@ function ShoppingActionOptions({ freshItems, dryItems, customItems, totalCost, c
     setExportError('');
     trackEvent('shopping_checklist_export_started', { items: totalItems });
     try {
-      const { default: html2canvas } = await import('html2canvas');
+      const { default: html2canvas } = await import('html2canvas-pro');
       if (document.fonts?.ready) await document.fonts.ready;
-      const canvas = await html2canvas(node, { scale: 2, backgroundColor: '#FFFFFF', useCORS: true, logging: false });
-      const dataUrl = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      link.href = dataUrl;
-      link.download = 'checklist-di-cho-30-phut-yeu-thuong.png';
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      const canvas = await captureCanvas(html2canvas, node, { scale: 2, backgroundColor: '#FFFFFF', useCORS: true, logging: false });
+      await deliverCanvas(canvas, 'checklist-di-cho-30-phut-yeu-thuong.png');
       trackEvent('shopping_checklist_exported', { items: totalItems });
-    } catch {
+    } catch (error) {
+      console.error('Image export failed', error);
       setExportError('Chưa tạo được ảnh lúc này. Bạn thử lại nhé.');
       trackEvent('shopping_checklist_export_failed', {});
     } finally {
